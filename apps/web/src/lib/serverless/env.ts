@@ -31,7 +31,10 @@ export function elogistiaConfig() {
   return {
     apiKey: required('ELOGISTIA_API_KEY'),
     apiUrl: optional('ELOGISTIA_API_URL', 'https://api.elogistia.com'),
-    timeoutMs: optionalInt('ELOGISTIA_API_TIMEOUT_MS', 10_000),
+    // 25s, not 10s: the bulk `tracking=''` fetch (elogistia/orders/route.ts)
+    // generates full detail for 100 orders per page, and was observed timing
+    // out at 10s against a real account with over a thousand orders.
+    timeoutMs: optionalInt('ELOGISTIA_API_TIMEOUT_MS', 25_000),
   };
 }
 
