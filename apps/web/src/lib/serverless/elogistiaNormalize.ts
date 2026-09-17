@@ -90,27 +90,20 @@ interface OrderDetailRow {
   Status?: string;
 }
 
-interface OrderListRow {
-  name?: string;
-  firstname?: string;
-  suivi?: string;
-  address?: string;
-  ['Commuhne ']?: string | number;
-  ['Commune ']?: string | number;
-  ['Téléphone']?: string;
-  ['Frais de livraison']?: string | number;
-  ['Validation Elogistia']?: string | number;
+/**
+ * getOrders with NO `tracking` param at all returns a sparse shape (phone/
+ * commune/delivery fee only - no tracking number, name, or status). Passing
+ * `tracking` as a real value returns one order's full detail. Passing it as
+ * an empty string (`tracking=`) - found empirically, not documented -
+ * returns EVERY order in that same full-detail shape, paginated at 100/page
+ * (see getOrdersPageInfo below). This app always sends `tracking=''` for a
+ * bulk fetch specifically to get the detail shape instead of the sparse one.
+ */
+export function normalizeOrderDetailRows(body: unknown): NormalizedOrder[] {
+  return extractBodyArray(body).map((row) => normalizeOrderDetail(row as OrderDetailRow));
 }
 
-/** getOrders returns a different shape depending on whether `tracking` was passed - see docs §1.5. */
-export function normalizeOrders(body: unknown, hadTrackingFilter: boolean): NormalizedOrder[] {
-  const rows = extractBodyArray(body);
-  return hadTrackingFilter
-    ? rows.map((row) => normalizeOrderDetail(row as OrderDetailRow))
-    : rows.map((row) => normalizeOrderListRow(row as OrderListRow));
-}
-
-function normalizeOrderDetail(row: OrderDetailRow): NormalizedOrder {
+export function normalizeOrderDetail(row: OrderDetailRow): NormalizedOrder {
   const rawStatus = row.Status ?? '';
   return {
     externalOrderId: row.CommandeID ?? null,
@@ -126,23 +119,17 @@ function normalizeOrderDetail(row: OrderDetailRow): NormalizedOrder {
   };
 }
 
-function normalizeOrderListRow(row: OrderListRow): NormalizedOrder {
-  // No text status is exposed on this shape - only a numeric "Validation
-  // Elogistia" code with no published mapping table (see docs §1.5) -
-  // callers should follow up with /api/elogistia/statuses for a usable status.
-  const rawStatus = row['Validation Elogistia'] !== undefined ? `elogistia-code:${row['Validation Elogistia']}` : '';
-  return {
-    externalOrderId: null,
-    trackingNumber: row.suivi ?? '',
-    customerName: joinName(row.name, row.firstname),
-    customerPhone: row['Téléphone'] ?? null,
-    address: row.address ?? null,
-    commune: trimOrNull(row['Commuhne '] ?? row['Commune ']),
-    wilaya: null,
-    deliveryFee: toNumberOrNull(row['Frais de livraison']),
-    rawStatus,
-    status: 'unknown',
-  };
+export interface OrdersPageInfo {
+  currentPage: number;
+  totalPages: number;
+}
+
+/** Reads the pagination metadata that rides alongside `body` on a `tracking=''` bulk response. */
+export function getOrdersPageInfo(body: unknown): OrdersPageInfo | null {
+  if (!body || typeof body !== 'object') return null;
+  const { currentPage, totalPages } = body as { currentPage?: number; totalPages?: number };
+  if (typeof currentPage !== 'number' || typeof totalPages !== 'number') return null;
+  return { currentPage, totalPages };
 }
 
 export interface NormalizedStatus {
