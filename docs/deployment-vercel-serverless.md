@@ -7,8 +7,8 @@ Both integrations coexist in the same Next.js app without overlapping: `/dashboa
 ## Architecture
 
 ```
-Browser (/live)
-  │  Promise.all: same-origin fetch, no credentials attached
+Browser (/live) ── HTTP Basic Auth (src/proxy.ts) ──▶ everything past this gate
+  │  Promise.all: same-origin fetch, credential cached per-origin by the browser
   ▼
 Next.js Route Handlers (Vercel Functions)
   /api/elogistia/orders     → GET https://api.elogistia.com/getOrders/
@@ -26,12 +26,22 @@ Every route:
 
 `/live`'s client component (`src/app/live/LiveDashboard.tsx`) fetches orders, campaigns and insights with a single `Promise.all` (they're independent of each other), shows a loading skeleton per section while its own request is in flight, and degrades per-section on error rather than blanking the whole page. Statuses are fetched right after orders resolve, since Elogistia's order-list shape has no usable status field of its own (see the module doc comment) — that's a genuine dependency, not an artificial one, so it isn't forced into the same `Promise.all`.
 
-## 1. Environment variables
+## 1. Authentication
+
+`/live` renders customer PII (name, phone, address) and live ad spend, and its API routes have no session concept of their own to fall back on — so `src/proxy.ts` (the file convention Next 16 replaced `middleware.ts` with) puts HTTP Basic Auth in front of `/live` and all of `/api/elogistia/*`, `/api/meta/*`, checked with a constant-time comparison against `LIVE_DASHBOARD_USER`/`LIVE_DASHBOARD_PASSWORD`.
+
+**This fails closed**: if either variable is unset, every protected path returns 401 rather than deploying open. Set both before the first production deploy — there is deliberately no way to opt out of this gate short of removing it from the source.
+
+Visiting `/live` triggers the browser's native Basic Auth prompt once; the browser then caches the credential per-origin and attaches it automatically to the `fetch()` calls `LiveDashboard.tsx` makes to the API routes, so no client-side auth code was needed for this.
+
+## 2. Environment variables
 
 Set these on the same Vercel project as `apps/web` (Project Settings → Environment Variables). They're independent of `BACKEND_API_URL`/`INTERNAL_API_TOKEN` (`docs/deployment-vercel-frontend.md`) — both sets can be present at once.
 
 | Variable | Required | Notes |
 |---|---|---|
+| `LIVE_DASHBOARD_USER` | Yes | Basic Auth username gating `/live` and its API routes — see §1. |
+| `LIVE_DASHBOARD_PASSWORD` | Yes | Basic Auth password. Mark **Sensitive**. A long random value, not a real account credential. |
 | `ELOGISTIA_API_KEY` | Yes | A single platform-level key (this integration is single-account, not multi-tenant). Mark **Sensitive**. |
 | `ELOGISTIA_API_URL` | No (default `https://api.elogistia.com`) | |
 | `ELOGISTIA_API_TIMEOUT_MS` | No (default `10000`) | |
@@ -41,16 +51,19 @@ Set these on the same Vercel project as `apps/web` (Project Settings → Environ
 | `META_GRAPH_API_VERSION` | No (default `v19.0`) | |
 | `META_API_TIMEOUT_MS` | No (default `15000`) | |
 
-## 2. Vercel Function configuration
+## 3. Vercel Function configuration
 
-Each route exports its own `maxDuration` (15s for Elogistia routes, 20s for Meta routes, which paginate) — comfortably inside Vercel's default Hobby/Pro limits, so no `vercel.json` function overrides are needed unless a plan's default is lower than that. No cron entries, no `vercel.json` at all is required for this integration specifically (contrast with `apps/api`'s `vercel.json`, which needs Cron Jobs for its sync workers — this integration has no background jobs to schedule).
+Each route exports its own `maxDuration` (15s for Elogistia routes, 20s for Meta routes, which paginate) — comfortably inside Vercel's default Hobby/Pro limits, so no `vercel.json` function overrides are needed unless a plan's default is lower than that (confirm against the target project's actual plan before relying on this — Hobby's default cap is lower than 15s unless Fluid Compute applies). No cron entries, no `vercel.json` at all is required for this integration specifically (contrast with `apps/api`'s `vercel.json`, which needs Cron Jobs for its sync workers — this integration has no background jobs to schedule).
 
-## 3. What "no database, no persistence" means in practice here
+Meta's cursor pagination (`src/lib/serverless/metaClient.ts`'s `metaGetAllPages`) is sequential by nature — each page's request needs the previous page's cursor, so it can't be parallelized with `Promise.all`. It requests `limit=500` per page specifically to keep this to one round-trip for the overwhelming majority of ad accounts; an account large enough to still need several pages at that page size will consume more of the route's `maxDuration` budget than a single call would, since `META_API_TIMEOUT_MS` (default 15000) applies to *each* page's request.
 
-- `/api/elogistia/statuses` batches tracking numbers into groups of 50 and fetches them with `Promise.all` rather than one call per tracking number, but does **not** rate-limit across invocations — there is nothing to hold a shared token bucket in (no Redis, per the requirements). Elogistia's documented cap is 100 req/min per API key; a single dashboard load doing a handful of batches stays well under it. A high-traffic deployment would need a distributed limiter (e.g. Upstash Redis, as `apps/api` already uses) if that assumption stops holding.
+## 4. What "no database, no persistence" means in practice here
+
+- `/api/elogistia/statuses` batches tracking numbers into groups of 50 and fetches them with `Promise.all` rather than one call per tracking number, but does **not** rate-limit across invocations — there is nothing to hold a shared token bucket in (no Redis, per the requirements). Elogistia's documented cap is 100 req/min per API key; a single dashboard load doing a handful of batches stays well under it (the endpoint also rejects more than 500 tracking numbers in one request, so one caller can't fan out unboundedly). A high-traffic deployment would need a distributed limiter (e.g. Upstash Redis, as `apps/api` already uses) if that assumption stops holding.
 - `/api/meta/insights` asks Meta to aggregate spend/impressions/clicks/purchases over the requested `datePreset` (default `last_30d`) itself, rather than pulling a day-by-day breakdown and summing it locally — there's nowhere to persist that breakdown between calls, so there's no reason to compute it that way.
+- `/api/elogistia/orders` (no `tracking` filter) is Elogistia's full, unpaginated order list — its own docs call this a backfill/reconciliation tool, not something to poll routinely. `/live` calls it on every open and every "Refresh" click anyway, since there's no database to keep a smaller incremental view in. For a seller with a large order history this means every dashboard open re-pulls everything; accept this knowingly, and lean on the Basic Auth gate (§1) to at least bound who can trigger it, since re-adding a cache would reintroduce the persistence this integration was built to avoid.
 - Nothing here writes to a database, queue, or file — every response is the direct, normalized result of the upstream call(s) made during that single request.
 
-## 4. Local development
+## 5. Local development
 
-Copy the block from `apps/web/.env.example` into `apps/web/.env.local`, fill in real Elogistia/Meta credentials, then `npm run dev` (or `npm run build && npm run start` to test the production build, which is what actually runs on Vercel). Visit `/live`.
+Copy the block from `apps/web/.env.example` into `apps/web/.env.local`, fill in real Elogistia/Meta credentials and a `LIVE_DASHBOARD_USER`/`LIVE_DASHBOARD_PASSWORD` of your choosing, then `npm run dev` (or `npm run build && npm run start` to test the production build, which is what actually runs on Vercel). Visit `/live` and enter those credentials at the browser's Basic Auth prompt.

@@ -65,6 +65,14 @@ export async function metaGet(path: string, params: Record<string, string | unde
   return body;
 }
 
+// Meta's own default page size is a small double-digit number, which for an
+// account with enough campaigns/rows to need several pages means several
+// sequential round-trips (cursor pagination can't be parallelized) - each
+// bounded by META_API_TIMEOUT_MS, easily exceeding a route's maxDuration
+// before maxPages is even reached. Asking for a large page explicitly keeps
+// this to one round-trip for the overwhelming majority of accounts.
+const DEFAULT_PAGE_SIZE = '500';
+
 /** Follows paging.next cursors, capped to stay within one function invocation's timeout budget. */
 export async function metaGetAllPages(
   path: string,
@@ -77,7 +85,7 @@ export async function metaGetAllPages(
 
   do {
     page += 1;
-    const body = (await metaGet(path, { ...params, after })) as {
+    const body = (await metaGet(path, { limit: DEFAULT_PAGE_SIZE, ...params, after })) as {
       data?: unknown[];
       paging?: { cursors?: { after?: string }; next?: string };
     };

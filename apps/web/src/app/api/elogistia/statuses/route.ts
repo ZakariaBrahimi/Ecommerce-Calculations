@@ -7,6 +7,7 @@ export const dynamic = 'force-dynamic';
 export const maxDuration = 15;
 
 const BATCH_SIZE = 50; // Elogistia's own recommended batching unit for getManyTracking - see docs/integrations/elogistia-api.md §3.3
+const MAX_TRACKING_NUMBERS = 500; // caps how many upstream batches one request can fan out into
 
 /**
  * GET /api/elogistia/statuses?trackingNumbers=L-372BNH,L-295LAI,...
@@ -32,6 +33,11 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
   const trackingNumbers = [...new Set(raw.split(',').map((t) => t.trim()).filter(Boolean))];
   if (trackingNumbers.length === 0) {
     return NextResponse.json({ statuses: [], count: 0 });
+  }
+  if (trackingNumbers.length > MAX_TRACKING_NUMBERS) {
+    return toErrorResponse(
+      new ProviderApiError('bad_request', `At most ${MAX_TRACKING_NUMBERS} tracking numbers per request`),
+    );
   }
 
   const batches: string[][] = [];
