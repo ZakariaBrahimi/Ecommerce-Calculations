@@ -96,16 +96,21 @@ export function LiveDashboard() {
     // returned (Elogistia's order-list shape has no usable status field of
     // its own - see elogistiaNormalize.ts) - this call runs after orders,
     // but still in parallel with nothing left to wait on at this point.
-    if (orders.ok && orders.data.orders.length > 0) {
-      setStatusesLoading(true);
+    // Orders without a tracking number yet (unconfirmed/undispatched) are
+    // filtered out first - calling the endpoint with nothing to look up
+    // would just 400.
+    if (orders.ok) {
       const trackingNumbers = orders.data.orders.map((o) => o.trackingNumber).filter(Boolean);
-      const statuses = await fetchStatuses(trackingNumbers);
-      if (statuses.ok) {
-        setStatusesByTracking(new Map(statuses.data.statuses.map((s) => [s.trackingNumber, s])));
-      } else {
-        setStatusesError(statuses.error);
+      if (trackingNumbers.length > 0) {
+        setStatusesLoading(true);
+        const statuses = await fetchStatuses(trackingNumbers);
+        if (statuses.ok) {
+          setStatusesByTracking(new Map(statuses.data.statuses.map((s) => [s.trackingNumber, s])));
+        } else {
+          setStatusesError(statuses.error);
+        }
+        setStatusesLoading(false);
       }
-      setStatusesLoading(false);
     }
   }, []);
 
