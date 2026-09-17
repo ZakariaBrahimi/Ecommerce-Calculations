@@ -8,7 +8,16 @@ export const dynamic = 'force-dynamic';
 export const maxDuration = 20;
 
 const INSIGHT_FIELDS = 'campaign_id,campaign_name,spend,impressions,clicks,actions,action_values,account_currency';
-const VALID_PRESETS = new Set(['today', 'yesterday', 'last_7d', 'last_14d', 'last_30d', 'last_90d', 'this_month']);
+const VALID_PRESETS = new Set([
+  'today',
+  'yesterday',
+  'last_7d',
+  'last_14d',
+  'last_30d',
+  'last_90d',
+  'this_month',
+  'maximum',
+]);
 
 /**
  * GET /api/meta/insights
@@ -22,7 +31,11 @@ const VALID_PRESETS = new Set(['today', 'yesterday', 'last_7d', 'last_14d', 'las
  */
 export async function GET(req: NextRequest): Promise<NextResponse> {
   const requestedPreset = req.nextUrl.searchParams.get('datePreset')?.trim();
-  const datePreset = requestedPreset && VALID_PRESETS.has(requestedPreset) ? requestedPreset : 'last_30d';
+  // Default to Meta's full account lifetime, not a 30-day window - product
+  // performance links a campaign's *entire* spend to a product (see
+  // /api/elogistia/product-summary), so a campaign that ran outside the last
+  // 30 days would otherwise show 0 spend and silently understate cost.
+  const datePreset = requestedPreset && VALID_PRESETS.has(requestedPreset) ? requestedPreset : 'maximum';
 
   try {
     const config = metaConfig();

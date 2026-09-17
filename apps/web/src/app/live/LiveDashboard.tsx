@@ -15,6 +15,7 @@ import {
   ProductSummaryResponse,
 } from '@/lib/liveClient';
 import { loadProductConfig, saveProductConfig, ProductConfig, ProductConfigMap } from '@/lib/productConfigStorage';
+import { CampaignMultiSelect } from './CampaignMultiSelect';
 
 // Confirmed with the account owner - Meta ad spend is billed in USD here.
 // Fixed, not live-fetched (no persistence, no FX API in scope) - update this
@@ -319,22 +320,11 @@ export function LiveDashboard() {
                           />
                         </td>
                         <td className="px-3 py-3">
-                          <select
-                            multiple
-                            value={productConfig.campaignIds}
-                            onChange={(e) =>
-                              updateConfig(p.productKey, p.productName, {
-                                campaignIds: Array.from(e.target.selectedOptions, (o) => o.value),
-                              })
-                            }
-                            className="h-20 w-48 rounded-md border border-border px-2 py-1 text-xs text-ink-1 outline-none focus:border-teal"
-                          >
-                            {campaigns.map((c) => (
-                              <option key={c.externalCampaignId} value={c.externalCampaignId}>
-                                {c.name}
-                              </option>
-                            ))}
-                          </select>
+                          <CampaignMultiSelect
+                            campaigns={campaigns}
+                            selectedIds={productConfig.campaignIds}
+                            onChange={(campaignIds) => updateConfig(p.productKey, p.productName, { campaignIds })}
+                          />
                         </td>
                         <td className="num px-3 py-3 text-right text-sm font-semibold text-emerald">{formatNumber(p.delivered)}</td>
                         <td className="num px-3 py-3 text-right text-sm font-semibold text-amber">{formatNumber(p.returned)}</td>
