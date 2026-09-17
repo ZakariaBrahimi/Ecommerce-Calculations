@@ -60,6 +60,8 @@ async function seedOrder(orderRepository: InMemoryDeliveryOrderRepository, track
     commune: null,
     wilaya: null,
     deliveryFee: null,
+    orderValue: null,
+    productCost: null,
     internalStatus: InternalDeliveryStatus.CONFIRMED,
     rawStatus: 'À ramasser',
     lastSyncedAt: null,

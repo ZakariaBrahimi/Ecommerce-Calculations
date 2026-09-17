@@ -58,6 +58,15 @@ model DeliveryOrder {
   commune         String?
   wilaya          String?
   deliveryFee     Decimal?               @map("delivery_fee") @db.Decimal(14, 4)
+  /// What the customer paid for the order (revenue) - only meaningful once
+  /// DELIVERED; Elogistia itself has no clean price field in the endpoints
+  /// this integration reads, so this is populated from the store/order
+  /// source once that integration exists, or by seed data until then. A
+  /// fuller Orders/Products module (Product, versioned ProductCost, Order/
+  /// OrderItem - see ARCHITECTURE.md) would replace this pair of columns.
+  orderValue      Decimal?               @map("order_value") @db.Decimal(14, 4)
+  /// COGS for the order at the time it was placed - see orderValue's note.
+  productCost     Decimal?               @map("product_cost") @db.Decimal(14, 4)
   internalStatus  InternalDeliveryStatus @map("internal_status")
   rawStatus       String?                @map("raw_status")
   lastSyncedAt    DateTime?              @map("last_synced_at")

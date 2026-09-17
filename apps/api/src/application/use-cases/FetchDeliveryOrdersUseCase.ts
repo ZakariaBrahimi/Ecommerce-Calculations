@@ -86,6 +86,11 @@ export class FetchDeliveryOrdersUseCase {
           commune: record.commune,
           wilaya: record.wilaya,
           deliveryFee: record.deliveryFee,
+          // Elogistia has no clean price field here - orderValue/productCost
+          // are populated from the store/order source once that integration
+          // exists (see DeliveryOrder's doc comment).
+          orderValue: null,
+          productCost: null,
           internalStatus,
           rawStatus: record.rawStatus,
           lastSyncedAt: now,

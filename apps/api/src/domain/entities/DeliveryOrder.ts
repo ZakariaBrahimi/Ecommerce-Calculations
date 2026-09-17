@@ -12,6 +12,10 @@ export interface DeliveryOrderProps {
   commune: string | null;
   wilaya: string | null;
   deliveryFee: number | null;
+  /** What the customer paid (revenue) - only meaningful once DELIVERED. See schema.prisma's note. */
+  orderValue: number | null;
+  /** COGS at order time. */
+  productCost: number | null;
   internalStatus: InternalDeliveryStatus;
   rawStatus: string | null;
   lastSyncedAt: Date | null;
