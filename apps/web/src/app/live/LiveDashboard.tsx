@@ -272,12 +272,12 @@ export function LiveDashboard() {
                   </tr>
                 </thead>
                 <tbody>
-                  {ordersResult.data.orders.map((o: OrderDTO) => {
-                    const liveStatus = statusesByTracking.get(o.trackingNumber);
+                  {ordersResult.data.orders.map((o: OrderDTO, index: number) => {
+                    const liveStatus = o.trackingNumber ? statusesByTracking.get(o.trackingNumber) : undefined;
                     const status = liveStatus?.status ?? o.status;
                     return (
-                      <tr key={o.trackingNumber} className="border-b border-border last:border-none hover:bg-[#F1F5F9]">
-                        <td className="px-3 py-3 font-mono text-xs text-ink-2">{o.trackingNumber}</td>
+                      <tr key={o.trackingNumber || o.externalOrderId || index} className="border-b border-border last:border-none hover:bg-[#F1F5F9]">
+                        <td className="px-3 py-3 font-mono text-xs text-ink-2">{o.trackingNumber || '—'}</td>
                         <td className="px-3 py-3 text-sm text-ink-1">{o.customerName ?? '—'}</td>
                         <td className="px-3 py-3 text-sm text-ink-2">
                           {[o.wilaya, o.commune].filter(Boolean).join(' / ') || '—'}
@@ -286,16 +286,20 @@ export function LiveDashboard() {
                         <td className="px-3 py-3">
                           <span className={`inline-flex items-center gap-1.5 text-xs font-bold ${STATUS_STYLE[status]}`}>
                             <span className="h-1.5 w-1.5 rounded-full bg-current" />
-                            {statusesLoading && !liveStatus ? 'Checking…' : STATUS_LABEL[status]}
+                            {statusesLoading && o.trackingNumber && !liveStatus ? 'Checking…' : STATUS_LABEL[status]}
                           </span>
                         </td>
                         <td className="px-3 py-3 text-right">
-                          <button
-                            onClick={() => openTracking(o.trackingNumber)}
-                            className="text-xs font-semibold text-teal-strong hover:underline"
-                          >
-                            View history
-                          </button>
+                          {o.trackingNumber ? (
+                            <button
+                              onClick={() => openTracking(o.trackingNumber)}
+                              className="text-xs font-semibold text-teal-strong hover:underline"
+                            >
+                              View history
+                            </button>
+                          ) : (
+                            <span className="text-xs text-ink-3">No tracking #</span>
+                          )}
                         </td>
                       </tr>
                     );
