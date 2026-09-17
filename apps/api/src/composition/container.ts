@@ -2,7 +2,7 @@ import { PrismaClient } from '@prisma/client';
 import { loadConfig } from '../infrastructure/config/env';
 import { PinoLogger } from '../infrastructure/logging/PinoLogger';
 import { AesGcmCredentialsCipher } from '../infrastructure/security/AesGcmCredentialsCipher';
-import { TokenBucketRateLimiter } from '../infrastructure/rate-limit/TokenBucketRateLimiter';
+import { createRateLimiter } from '../infrastructure/rate-limit/createRateLimiter';
 import { ElogistiaHttpClient } from '../infrastructure/providers/elogistia/ElogistiaHttpClient';
 import { ElogistiaDeliveryProvider } from '../infrastructure/providers/elogistia/ElogistiaDeliveryProvider';
 import { ElogistiaStatusMapper } from '../infrastructure/providers/elogistia/ElogistiaStatusMapper';
@@ -42,7 +42,13 @@ export function buildContainer(): Container {
   const prisma = new PrismaClient({ datasources: { db: { url: config.database.url } } });
 
   const cipher = new AesGcmCredentialsCipher(config.credentialsEncryptionKeyBase64);
-  const rateLimiter = new TokenBucketRateLimiter(config.deliveryElogistia.rateLimitPerMinute);
+  const rateLimiter = createRateLimiter({
+    upstashRedis: config.upstashRedis,
+    capacityPerMinute: config.deliveryElogistia.rateLimitPerMinute,
+    isServerless: config.isServerless,
+    logger,
+    keyPrefix: 'elogistia',
+  });
 
   const httpClient = new ElogistiaHttpClient(
     { baseUrl: config.deliveryElogistia.apiUrl, timeoutMs: config.deliveryElogistia.timeoutMs },

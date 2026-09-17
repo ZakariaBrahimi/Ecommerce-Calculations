@@ -1,5 +1,6 @@
 import { NextFunction, Request, Response } from 'express';
 import jwt from 'jsonwebtoken';
+import { timingSafeEqual } from 'node:crypto';
 
 export interface AuthenticatedRequest extends Request {
   tenantId?: string;
@@ -38,14 +39,34 @@ export function requireTenantAuth(jwtSecret: string) {
  * Guards internal-only routes (e.g. manually triggering the sync job) with
  * a separate shared secret, distinct from tenant session tokens, so a
  * leaked tenant JWT can never trigger platform-wide operations.
+ *
+ * Accepts the token either as `x-internal-token` (our own convention) or as
+ * a standard `Authorization: Bearer <token>` header, because Vercel Cron
+ * Jobs automatically send `Authorization: Bearer $CRON_SECRET` when that
+ * env var is set - pointing CRON_SECRET at the same value as
+ * INTERNAL_API_TOKEN lets a Vercel Cron trigger hit these routes with no
+ * extra code (see docs/deployment-vercel.md).
  */
 export function requireInternalToken(expectedToken: string) {
   return (req: Request, res: Response, next: NextFunction): void => {
-    const provided = req.header('x-internal-token');
-    if (!provided || provided !== expectedToken) {
+    const provided = req.header('x-internal-token') ?? bearerToken(req);
+    if (!provided || !constantTimeEquals(provided, expectedToken)) {
       res.status(401).json({ error: { code: 'UNAUTHENTICATED', message: 'Invalid internal token' } });
       return;
     }
     next();
   };
+}
+
+function bearerToken(req: Request): string | undefined {
+  const header = req.header('authorization');
+  return header?.startsWith('Bearer ') ? header.slice('Bearer '.length) : undefined;
+}
+
+/** Avoids leaking the token's length/prefix through response-timing differences. */
+function constantTimeEquals(a: string, b: string): boolean {
+  const bufA = Buffer.from(a);
+  const bufB = Buffer.from(b);
+  if (bufA.length !== bufB.length) return false;
+  return timingSafeEqual(bufA, bufB);
 }

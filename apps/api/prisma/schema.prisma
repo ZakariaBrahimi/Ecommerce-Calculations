@@ -4,7 +4,10 @@
 // domain/application layers never import from this schema or its client.
 
 generator client {
-  provider = "prisma-client-js"
+  provider      = "prisma-client-js"
+  // "native" covers local dev/CI; "rhel-openssl-3.0.x" covers Vercel's
+  // Node.js serverless runtime (Amazon Linux 2023) - see docs/deployment-vercel.md.
+  binaryTargets = ["native", "rhel-openssl-3.0.x"]
 }
 
 datasource db {

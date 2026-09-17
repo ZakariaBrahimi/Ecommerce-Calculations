@@ -67,7 +67,7 @@ export class MetaGraphHttpClient {
     headers: Record<string, string>,
     rateLimitKey: string,
   ): Promise<unknown> {
-    await this.rateLimiter.acquire(rateLimitKey);
+    await this.acquireSlot(rateLimitKey);
 
     const url = new URL(`/${this.config.apiVersion}${path}`, this.config.baseUrl);
     for (const [name, value] of Object.entries(params)) {
@@ -154,6 +154,19 @@ export class MetaGraphHttpClient {
     }
 
     return body;
+  }
+
+  /** Translates any RateLimiter failure into MetaRateLimitError - a raw throw here would otherwise bypass the error hierarchy the rest of the app expects. */
+  private async acquireSlot(rateLimitKey: string): Promise<void> {
+    try {
+      await this.rateLimiter.acquire(rateLimitKey);
+    } catch (err) {
+      if (err instanceof MetaRateLimitError) throw err;
+      this.logger.error('Rate limiter failed while acquiring a slot for Meta Graph API', {
+        error: err instanceof Error ? err.message : String(err),
+      });
+      throw new MetaRateLimitError('Could not acquire a rate-limit slot for Meta Graph API', 5_000, err);
+    }
   }
 }
 

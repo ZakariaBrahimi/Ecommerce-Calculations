@@ -37,7 +37,10 @@ export function buildDeliveryRoutes(deps: DeliveryRouteDeps): Router {
   );
   router.get('/orders/:trackingNumber/history', tenantAuth, asyncHandler(deps.orderController.getHistory));
 
+  // POST for manual/API-triggered runs; GET too because Vercel Cron Jobs only issue GET requests
+  // (see docs/deployment-vercel.md) - both require the same internal token either way.
   router.post('/internal/sync', internalAuth, asyncHandler(deps.syncController.triggerNow));
+  router.get('/internal/sync', internalAuth, asyncHandler(deps.syncController.triggerNow));
 
   return router;
 }

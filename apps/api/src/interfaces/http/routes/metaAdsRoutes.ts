@@ -35,7 +35,10 @@ export function buildMetaAdsRoutes(deps: MetaAdsRouteDeps): Router {
   router.post('/ad-account', tenantAuth, asyncHandler(deps.adAccountController.select));
   router.get('/dashboard', tenantAuth, asyncHandler(deps.dashboardController.getDashboard));
 
+  // POST for manual/API-triggered runs; GET too because Vercel Cron Jobs only issue GET requests
+  // (see docs/deployment-vercel.md) - both require the same internal token either way.
   router.post('/internal/sync', internalAuth, asyncHandler(deps.syncController.triggerNow));
+  router.get('/internal/sync', internalAuth, asyncHandler(deps.syncController.triggerNow));
 
   return router;
 }

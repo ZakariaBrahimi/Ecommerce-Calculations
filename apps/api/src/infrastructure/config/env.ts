@@ -32,6 +32,13 @@ export interface AppConfig {
   jwtSecret: string;
   internalApiToken: string;
   syncIntervalCron: string;
+  /** Browser origins allowed to call this API cross-origin. Empty = no browser can call it cross-origin. */
+  corsAllowedOrigins: string[];
+  /** True when running as a Vercel serverless function - see api/index.ts and docs/deployment-vercel.md. */
+  isServerless: boolean;
+  /** Optional distributed rate-limit store (Upstash Redis REST API) - required for correctness once
+   *  this runs as more than one process/instance; falls back to an in-memory limiter otherwise. */
+  upstashRedis: { url: string; token: string } | null;
 }
 
 function required(name: string): string {
@@ -53,6 +60,13 @@ function optionalInt(name: string, fallback: number): number {
   const parsed = Number.parseInt(raw, 10);
   if (Number.isNaN(parsed)) throw new Error(`Environment variable ${name} must be an integer`);
   return parsed;
+}
+
+function buildUpstashConfig(): { url: string; token: string } | null {
+  const url = process.env.UPSTASH_REDIS_REST_URL;
+  const token = process.env.UPSTASH_REDIS_REST_TOKEN;
+  if (!url || !token) return null;
+  return { url, token };
 }
 
 let cached: AppConfig | undefined;
@@ -98,6 +112,12 @@ export function loadConfig(): AppConfig {
     jwtSecret: required('JWT_SECRET'),
     internalApiToken: required('INTERNAL_API_TOKEN'),
     syncIntervalCron: optional('DELIVERY_SYNC_CRON', '*/15 * * * *'),
+    corsAllowedOrigins: optional('CORS_ALLOWED_ORIGINS', '')
+      .split(',')
+      .map((origin) => origin.trim())
+      .filter((origin) => origin !== ''),
+    isServerless: process.env.VERCEL === '1',
+    upstashRedis: buildUpstashConfig(),
   };
 
   return cached;

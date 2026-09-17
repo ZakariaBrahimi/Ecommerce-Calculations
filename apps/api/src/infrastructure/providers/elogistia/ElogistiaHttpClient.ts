@@ -32,7 +32,7 @@ export class ElogistiaHttpClient {
   ) {}
 
   async get(path: string, params: Record<string, string | undefined>, apiKey: string): Promise<unknown> {
-    await this.rateLimiter.acquire(bucketKeyFor(apiKey));
+    await this.acquireSlot(apiKey);
 
     const url = new URL(path, this.config.baseUrl);
     // Both param names are sent because the documented endpoints disagree on
@@ -79,6 +79,19 @@ export class ElogistiaHttpClient {
     } catch (err) {
       log.error('Elogistia response was not valid JSON', {});
       throw new DeliveryResponseValidationError('Elogistia response was not valid JSON', err);
+    }
+  }
+
+  /** Translates any RateLimiter failure into the same typed error the HTTP path uses - a raw throw here would otherwise bypass the error hierarchy the rest of the app expects. */
+  private async acquireSlot(apiKey: string): Promise<void> {
+    try {
+      await this.rateLimiter.acquire(bucketKeyFor(apiKey));
+    } catch (err) {
+      if (err instanceof DeliveryRateLimitError) throw err;
+      this.logger.error('Rate limiter failed while acquiring a slot for Elogistia', {
+        error: err instanceof Error ? err.message : String(err),
+      });
+      throw new DeliveryRateLimitError('Could not acquire a rate-limit slot for Elogistia', 5_000, err);
     }
   }
 }

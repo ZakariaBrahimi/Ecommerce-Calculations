@@ -101,3 +101,13 @@ npm run dev
 - **Logging** goes through the `Logger` port (Pino in production), with
   API keys, access tokens, and encrypted credentials redacted at the logger
   level as defense in depth on top of callers never passing them in.
+
+## Security & deployment
+
+- Full audit (findings, fixes, remaining gaps): `../../docs/security-review.md`.
+- Deploying this service to Vercel (why the in-process cron/rate-limiter
+  had to change, env var setup, secrets management): `../../docs/deployment-vercel.md`.
+- `helmet`, a `CORS_ALLOWED_ORIGINS` allowlist (never a wildcard), and
+  inbound rate limiting (`express-rate-limit`) sit in front of every route -
+  see `interfaces/http/middleware/security.ts`.
+- `npm audit` is currently clean (0 vulnerabilities).

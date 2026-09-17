@@ -1,0 +1,9 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "buildCommand": "npm run vercel-build",
+  "rewrites": [{ "source": "/(.*)", "destination": "/api" }],
+  "crons": [
+    { "path": "/api/delivery/internal/sync", "schedule": "*/15 * * * *" },
+    { "path": "/api/meta-ads/internal/sync", "schedule": "0 * * * *" }
+  ]
+}

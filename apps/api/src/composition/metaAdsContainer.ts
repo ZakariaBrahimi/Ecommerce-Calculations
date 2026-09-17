@@ -2,7 +2,7 @@ import { PrismaClient } from '@prisma/client';
 import { AppConfig } from '../infrastructure/config/env';
 import { Logger } from '../domain/ports/Logger';
 import { CredentialsCipher } from '../domain/ports/CredentialsCipher';
-import { TokenBucketRateLimiter } from '../infrastructure/rate-limit/TokenBucketRateLimiter';
+import { createRateLimiter } from '../infrastructure/rate-limit/createRateLimiter';
 import { MetaGraphHttpClient } from '../infrastructure/providers/meta-ads/MetaGraphHttpClient';
 import { MetaAdsProvider } from '../infrastructure/providers/meta-ads/MetaAdsProvider';
 import { MetaCampaignStatusMapper } from '../infrastructure/providers/meta-ads/MetaCampaignStatusMapper';
@@ -47,7 +47,13 @@ export function buildMetaAdsModule(deps: {
 }): MetaAdsModule {
   const { prisma, cipher, logger, config } = deps;
 
-  const rateLimiter = new TokenBucketRateLimiter(config.metaAds.rateLimitPerMinute);
+  const rateLimiter = createRateLimiter({
+    upstashRedis: config.upstashRedis,
+    capacityPerMinute: config.metaAds.rateLimitPerMinute,
+    isServerless: config.isServerless,
+    logger,
+    keyPrefix: 'meta-ads',
+  });
   const httpClient = new MetaGraphHttpClient(
     {
       baseUrl: config.metaAds.graphApiBaseUrl,

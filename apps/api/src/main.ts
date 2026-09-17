@@ -6,7 +6,7 @@ async function main(): Promise<void> {
   const config = loadConfig();
   const { logger, prisma, scheduler, routeDeps, metaAds } = buildContainer();
 
-  const app = createServer(logger, routeDeps, metaAds.routeDeps);
+  const app = createServer(logger, routeDeps, metaAds.routeDeps, config.corsAllowedOrigins);
   const server = app.listen(config.port, () => {
     logger.info('ProfitFlow AI backend listening', { port: config.port });
   });
