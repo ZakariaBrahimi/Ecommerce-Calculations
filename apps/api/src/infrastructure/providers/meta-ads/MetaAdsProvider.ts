@@ -27,7 +27,7 @@ export interface MetaOAuthConfig {
 const CAMPAIGN_FIELDS = 'id,name,objective,effective_status,daily_budget,start_time,stop_time';
 const ADSET_FIELDS = 'id,campaign_id,name,effective_status,daily_budget,start_time,end_time';
 const AD_FIELDS = 'id,adset_id,campaign_id,name,effective_status';
-const INSIGHT_FIELDS = 'campaign_id,spend,impressions,clicks,actions,date_start,account_currency';
+const INSIGHT_FIELDS = 'campaign_id,spend,impressions,clicks,actions,action_values,date_start,account_currency';
 const AD_ACCOUNT_FIELDS = 'id,name,currency,account_status';
 const OAUTH_SCOPES = 'ads_read,ads_management,business_management';
 

@@ -12,6 +12,10 @@ export interface DailySpendProps {
   resultType: string | null;
   /** spend / results when results > 0, else null - never divide by zero. */
   costPerResult: number | null;
+  /** Purchase count, unconditionally (unlike `results`, not gated on the campaign's objective) - see extractPurchases. */
+  purchases: number;
+  /** Meta-attributed purchase revenue (`action_values`), same currency as `spend`. 0 when no purchases occurred. */
+  purchaseValue: number;
   currency: string | null;
   createdAt: Date;
   updatedAt: Date;

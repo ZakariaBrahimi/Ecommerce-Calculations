@@ -52,6 +52,8 @@ export interface RawDailyInsightRecord {
   clicks: number;
   currency: string | null;
   actions: RawInsightAction[];
+  /** Meta's per-action_type attributed revenue (`action_values`) - paired with `actions` by actionType, see extractPurchases. */
+  actionValues: RawInsightAction[];
 }
 
 /**

@@ -43,6 +43,8 @@ export interface DemoDailySpend {
   clicks: number;
   results: number;
   resultType: string;
+  purchases: number;
+  purchaseValue: number;
 }
 
 export interface DemoAd {
@@ -277,6 +279,15 @@ export function buildDemoScenario(): DemoScenario {
 
       const clicks = Math.round(spend / (18 + rng() * 6));
       const results = Math.max(0, Math.round(clicks * (0.08 + rng() * 0.05)));
+      // resultType is always 'omni_purchase' for this scenario's objective (OUTCOME_SALES),
+      // so purchases == results; purchaseValue is Meta's attributed revenue for those
+      // purchases, independent of the delivery-confirmed revenue tracked on DeliveryOrder
+      // (Meta attributes a purchase the moment checkout completes, before Elogistia ever
+      // sees the order). Derived from spend via a realistic daily ROAS (3x-6x, a typical
+      // healthy range for paid social) rather than an assumed order value, so campaign-level
+      // ROAS lands somewhere believable instead of an average-order-value artifact.
+      const purchases = results;
+      const purchaseValue = purchases > 0 ? round2(spend * (3 + rng() * 3)) : 0;
 
       dailySpend.push({
         date: daysAgo(day),
@@ -285,6 +296,8 @@ export function buildDemoScenario(): DemoScenario {
         clicks,
         results,
         resultType: 'omni_purchase',
+        purchases,
+        purchaseValue,
       });
     }
 

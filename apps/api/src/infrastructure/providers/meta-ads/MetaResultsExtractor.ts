@@ -20,10 +20,13 @@ export interface ExtractedResult {
  * under both "omni_purchase" and the older pixel-specific action type) -
  * the first present, non-zero match wins.
  */
+/** The action_type priority list for a completed purchase - shared by the sales objectives below and by extractPurchases, which uses it unconditionally. */
+const PURCHASE_ACTION_TYPES: readonly string[] = ['omni_purchase', 'offsite_conversion.fb_pixel_purchase', 'purchase'];
+
 const OBJECTIVE_ACTION_TYPES: ReadonlyMap<string, readonly string[]> = new Map([
-  ['OUTCOME_SALES', ['omni_purchase', 'offsite_conversion.fb_pixel_purchase', 'purchase']],
-  ['CONVERSIONS', ['omni_purchase', 'offsite_conversion.fb_pixel_purchase', 'purchase']],
-  ['PRODUCT_CATALOG_SALES', ['omni_purchase', 'offsite_conversion.fb_pixel_purchase', 'purchase']],
+  ['OUTCOME_SALES', PURCHASE_ACTION_TYPES],
+  ['CONVERSIONS', PURCHASE_ACTION_TYPES],
+  ['PRODUCT_CATALOG_SALES', PURCHASE_ACTION_TYPES],
 
   ['OUTCOME_LEADS', ['onsite_conversion.lead_grouped', 'lead']],
   ['LEAD_GENERATION', ['onsite_conversion.lead_grouped', 'lead']],
@@ -57,4 +60,27 @@ export function extractResults(
   // window's actions - fall back to link clicks rather than reporting a
   // misleading zero. Callers can tell this happened via resultType.
   return { results: fallbackClicks, resultType: fallbackClicks > 0 ? 'link_click' : null };
+}
+
+export interface ExtractedPurchases {
+  purchases: number;
+  purchaseValue: number;
+}
+
+/**
+ * Unlike extractResults, this always looks for a completed purchase -
+ * regardless of the campaign's objective. A dashboard's "Purchases"/"ROAS"
+ * columns mean the same thing for every campaign, whereas "Results" is
+ * objective-relative (e.g. link clicks for a traffic campaign). Both can
+ * legitimately be shown side by side for the same campaign.
+ */
+export function extractPurchases(actions: RawInsightAction[], actionValues: RawInsightAction[]): ExtractedPurchases {
+  for (const actionType of PURCHASE_ACTION_TYPES) {
+    const action = actions.find((a) => a.actionType === actionType);
+    if (action) {
+      const value = actionValues.find((a) => a.actionType === actionType);
+      return { purchases: action.value, purchaseValue: value?.value ?? 0 };
+    }
+  }
+  return { purchases: 0, purchaseValue: 0 };
 }

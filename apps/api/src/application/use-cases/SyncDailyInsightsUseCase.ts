@@ -4,7 +4,7 @@ import { DailySpendRepository } from '../../domain/ports/DailySpendRepository';
 import { Logger } from '../../domain/ports/Logger';
 import { MetaConnectionResolver } from '../services/MetaConnectionResolver';
 import { DailySpend } from '../../domain/entities/DailySpend';
-import { extractResults } from '../../infrastructure/providers/meta-ads/MetaResultsExtractor';
+import { extractResults, extractPurchases } from '../../infrastructure/providers/meta-ads/MetaResultsExtractor';
 
 export interface SyncDailyInsightsInput {
   tenantId: string;
@@ -56,6 +56,7 @@ export class SyncDailyInsightsUseCase {
       }
 
       const { results, resultType } = extractResults(campaign.toPrimitives().objective, record.actions, record.clicks);
+      const { purchases, purchaseValue } = extractPurchases(record.actions, record.actionValues);
 
       await this.dailySpend.upsert(
         DailySpend.create({
@@ -67,6 +68,8 @@ export class SyncDailyInsightsUseCase {
           clicks: record.clicks,
           results,
           resultType,
+          purchases,
+          purchaseValue,
           currency: record.currency,
         }),
       );

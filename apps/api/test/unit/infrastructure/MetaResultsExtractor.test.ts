@@ -1,4 +1,4 @@
-import { extractResults } from '../../../src/infrastructure/providers/meta-ads/MetaResultsExtractor';
+import { extractResults, extractPurchases } from '../../../src/infrastructure/providers/meta-ads/MetaResultsExtractor';
 
 describe('extractResults', () => {
   it('picks the omni_purchase action for an OUTCOME_SALES objective', () => {
@@ -45,5 +45,36 @@ describe('extractResults', () => {
   it('reports resultType null when there is truly nothing to report', () => {
     const result = extractResults(null, [], 0);
     expect(result).toEqual({ results: 0, resultType: null });
+  });
+});
+
+describe('extractPurchases', () => {
+  it('pairs a purchase action with its action_value regardless of objective', () => {
+    const result = extractPurchases(
+      [
+        { actionType: 'link_click', value: 50 },
+        { actionType: 'omni_purchase', value: 7 },
+      ],
+      [{ actionType: 'omni_purchase', value: 15_400 }],
+    );
+    expect(result).toEqual({ purchases: 7, purchaseValue: 15_400 });
+  });
+
+  it('falls back through the same priority list as extractResults', () => {
+    const result = extractPurchases(
+      [{ actionType: 'offsite_conversion.fb_pixel_purchase', value: 3 }],
+      [{ actionType: 'offsite_conversion.fb_pixel_purchase', value: 900 }],
+    );
+    expect(result).toEqual({ purchases: 3, purchaseValue: 900 });
+  });
+
+  it('reports purchaseValue as 0 when a purchase count exists but no action_value was returned', () => {
+    const result = extractPurchases([{ actionType: 'omni_purchase', value: 2 }], []);
+    expect(result).toEqual({ purchases: 2, purchaseValue: 0 });
+  });
+
+  it('reports zero purchases when no purchase action type is present, e.g. a traffic campaign', () => {
+    const result = extractPurchases([{ actionType: 'link_click', value: 40 }], []);
+    expect(result).toEqual({ purchases: 0, purchaseValue: 0 });
   });
 });

@@ -75,6 +75,7 @@ describe('parseDailyInsights', () => {
         clicks: '250',
         account_currency: 'USD',
         actions: [{ action_type: 'omni_purchase', value: '8' }],
+        action_values: [{ action_type: 'omni_purchase', value: '1560.00' }],
       },
     ]);
 
@@ -82,6 +83,14 @@ describe('parseDailyInsights', () => {
     expect(insight.impressions).toBe(10000);
     expect(insight.clicks).toBe(250);
     expect(insight.actions).toEqual([{ actionType: 'omni_purchase', value: 8 }]);
+    expect(insight.actionValues).toEqual([{ actionType: 'omni_purchase', value: 1560 }]);
+  });
+
+  it('defaults actionValues to an empty array when action_values is absent', () => {
+    const [insight] = parseDailyInsights([
+      { campaign_id: '120001', date_start: '2024-06-05', spend: '10', impressions: '100', clicks: '5' },
+    ]);
+    expect(insight.actionValues).toEqual([]);
   });
 
   it('throws when campaign_id/date_start is missing', () => {

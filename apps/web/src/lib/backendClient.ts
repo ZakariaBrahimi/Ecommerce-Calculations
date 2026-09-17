@@ -100,8 +100,15 @@ export interface CampaignRow {
   status: 'ACTIVE' | 'PAUSED' | 'STOPPED';
   dailyBudget: number | null;
   spentAmount: number;
+  impressions: number;
+  clicks: number;
+  ctrPct: number | null;
+  cpc: number | null;
   resultsCount: number;
   costPerResult: number | null;
+  purchases: number;
+  purchaseValue: number;
+  roas: number | null;
   startDate: string | null;
   endDate: string | null;
   currency: string | null;

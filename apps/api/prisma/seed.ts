@@ -123,6 +123,8 @@ async function main(): Promise<void> {
           results: daily.results,
           resultType: daily.resultType,
           costPerResult: daily.results > 0 ? Math.round((daily.spend / daily.results) * 100) / 100 : null,
+          purchases: daily.purchases,
+          purchaseValue: daily.purchaseValue,
           currency: campaign.currency,
         },
       });

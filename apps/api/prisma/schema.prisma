@@ -224,6 +224,8 @@ model DailySpend {
   results       Int
   resultType    String?  @map("result_type")
   costPerResult Decimal? @map("cost_per_result") @db.Decimal(14, 4)
+  purchases     Int      @default(0)
+  purchaseValue Decimal  @default(0) @map("purchase_value") @db.Decimal(14, 4)
   currency      String?
   createdAt     DateTime @default(now()) @map("created_at")
   updatedAt     DateTime @updatedAt @map("updated_at")

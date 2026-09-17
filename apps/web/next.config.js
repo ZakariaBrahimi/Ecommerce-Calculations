@@ -6,7 +6,10 @@ const nextConfig = {
   // Security headers for every response - Vercel serves these as-is, no
   // extra config needed on their side. Mirrors the backend's helmet() setup
   // (apps/api/src/interfaces/http/middleware/security.ts) so both halves of
-  // the app carry the same baseline hardening.
+  // the app carry the same baseline hardening. Content-Security-Policy is
+  // NOT set here - it needs a fresh nonce per request, so src/middleware.ts
+  // sets it instead (a static, nonce-less CSP would block Next's own inline
+  // hydration scripts and break every client component in the app).
   async headers() {
     return [
       {
@@ -17,12 +20,6 @@ const nextConfig = {
           { key: 'Referrer-Policy', value: 'strict-origin-when-cross-origin' },
           { key: 'Permissions-Policy', value: 'camera=(), microphone=(), geolocation=()' },
           { key: 'Strict-Transport-Security', value: 'max-age=63072000; includeSubDomains; preload' },
-          {
-            key: 'Content-Security-Policy',
-            // 'unsafe-inline' on style is Tailwind/Next's injected style tags at build time, not user input.
-            value:
-              "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'",
-          },
         ],
       },
     ];

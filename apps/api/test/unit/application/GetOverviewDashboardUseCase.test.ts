@@ -43,6 +43,8 @@ function makeSpend(campaignId: string, spend: number, date: string) {
     clicks: 10,
     results: 1,
     resultType: 'omni_purchase',
+    purchases: 1,
+    purchaseValue: 0,
     currency: 'DZD',
   });
 }

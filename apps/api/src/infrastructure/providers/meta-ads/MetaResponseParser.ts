@@ -50,6 +50,7 @@ interface GraphInsightRow {
   clicks?: string;
   account_currency?: string;
   actions?: GraphActionRow[];
+  action_values?: GraphActionRow[];
 }
 
 interface GraphAdAccountRow {
@@ -109,14 +110,17 @@ export function parseAds(rows: unknown[]): RawAdRecord[] {
   });
 }
 
+function parseGraphActions(rows: GraphActionRow[] | undefined): RawInsightAction[] {
+  return (rows ?? [])
+    .filter((a): a is Required<GraphActionRow> => Boolean(a.action_type && a.value !== undefined))
+    .map((a) => ({ actionType: a.action_type, value: Number(a.value) }));
+}
+
 export function parseDailyInsights(rows: unknown[]): RawDailyInsightRecord[] {
   return (rows as GraphInsightRow[]).map((row) => {
     if (!row.campaign_id || !row.date_start) {
       throw new MetaResponseValidationError('Meta insight row is missing campaign_id/date_start');
     }
-    const actions: RawInsightAction[] = (row.actions ?? [])
-      .filter((a): a is Required<GraphActionRow> => Boolean(a.action_type && a.value !== undefined))
-      .map((a) => ({ actionType: a.action_type, value: Number(a.value) }));
 
     return {
       externalCampaignId: row.campaign_id,
@@ -127,7 +131,8 @@ export function parseDailyInsights(rows: unknown[]): RawDailyInsightRecord[] {
       impressions: row.impressions ? Number(row.impressions) : 0,
       clicks: row.clicks ? Number(row.clicks) : 0,
       currency: row.account_currency ?? null,
-      actions,
+      actions: parseGraphActions(row.actions),
+      actionValues: parseGraphActions(row.action_values),
     };
   });
 }

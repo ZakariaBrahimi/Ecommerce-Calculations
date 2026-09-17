@@ -1,4 +1,4 @@
-import { formatDate, formatMoney, formatNumber } from '@/lib/format';
+import { formatDate, formatMoney, formatMultiplier, formatNumber, formatPercent } from '@/lib/format';
 import type { CampaignDashboard, CampaignRow } from '@/lib/backendClient';
 
 const STATUS_STYLE: Record<CampaignRow['status'], string> = {
@@ -25,6 +25,14 @@ function Row({ row }: { row: CampaignRow }) {
       </td>
       <td className="num px-3 py-3.5 text-right text-sm font-semibold text-ink-1">
         {formatMoney(row.spentAmount, currency)}
+      </td>
+      <td className="num px-3 py-3.5 text-right text-sm text-ink-2">{formatNumber(row.impressions)}</td>
+      <td className="num px-3 py-3.5 text-right text-sm text-ink-2">{formatNumber(row.clicks)}</td>
+      <td className="num px-3 py-3.5 text-right text-sm text-ink-2">{formatPercent(row.ctrPct)}</td>
+      <td className="num px-3 py-3.5 text-right text-sm text-ink-2">{formatMoney(row.cpc, currency)}</td>
+      <td className="num px-3 py-3.5 text-right text-sm font-semibold text-ink-1">{formatNumber(row.purchases)}</td>
+      <td className="num px-3 py-3.5 text-right text-sm font-semibold text-emerald">
+        {formatMultiplier(row.roas)}
       </td>
       <td className="num px-3 py-3.5 text-right text-sm font-semibold text-ink-1">{formatNumber(row.resultsCount)}</td>
       <td className="num px-3 py-3.5 text-right text-sm font-semibold text-ink-1">
@@ -58,12 +66,18 @@ export function CampaignTable({ dashboard }: { dashboard: CampaignDashboard }) {
         </p>
       ) : (
         <div className="overflow-x-auto">
-          <table className="w-full min-w-[640px] border-collapse">
+          <table className="w-full min-w-[1180px] border-collapse">
             <thead>
               <tr className="border-b border-border text-left text-[11px] font-bold uppercase tracking-wide text-ink-3">
                 <th className="px-3 pb-2.5">Campaign</th>
                 <th className="px-3 pb-2.5 text-right">Daily budget</th>
                 <th className="px-3 pb-2.5 text-right">Spend</th>
+                <th className="px-3 pb-2.5 text-right">Impressions</th>
+                <th className="px-3 pb-2.5 text-right">Clicks</th>
+                <th className="px-3 pb-2.5 text-right">CTR</th>
+                <th className="px-3 pb-2.5 text-right">CPC</th>
+                <th className="px-3 pb-2.5 text-right">Purchases</th>
+                <th className="px-3 pb-2.5 text-right">ROAS</th>
                 <th className="px-3 pb-2.5 text-right">Results</th>
                 <th className="px-3 pb-2.5 text-right">Cost / result</th>
                 <th className="px-3 pb-2.5 text-right">Active window</th>

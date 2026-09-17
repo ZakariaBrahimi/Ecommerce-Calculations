@@ -47,6 +47,8 @@ describe('GetCampaignDashboardUseCase', () => {
         clicks: 20,
         results: 2,
         resultType: 'omni_purchase',
+        purchases: 2,
+        purchaseValue: 160,
         currency: 'USD',
       }),
     );
@@ -62,11 +64,19 @@ describe('GetCampaignDashboardUseCase', () => {
       name: 'Active Campaign',
       dailyBudget: 30,
       spentAmount: 40,
+      impressions: 1000,
+      clicks: 20,
+      ctrPct: 2,
+      cpc: 2,
       resultsCount: 2,
       costPerResult: 20,
+      purchases: 2,
+      purchaseValue: 160,
+      roas: 4,
     });
     expect(dashboard.paused[0].spentAmount).toBe(0);
     expect(dashboard.paused[0].costPerResult).toBeNull();
+    expect(dashboard.paused[0].roas).toBeNull();
   });
 
   it('returns empty groups for a tenant with no campaigns', async () => {

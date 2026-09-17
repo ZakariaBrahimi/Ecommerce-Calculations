@@ -65,6 +65,7 @@ describe('SyncDailyInsightsUseCase', () => {
         clicks: 80,
         currency: 'USD',
         actions: [{ actionType: 'omni_purchase', value: 4 }],
+        actionValues: [{ actionType: 'omni_purchase', value: 620 }],
       },
     ];
 
@@ -78,6 +79,8 @@ describe('SyncDailyInsightsUseCase', () => {
     expect(row.results).toBe(4);
     expect(row.resultType).toBe('omni_purchase');
     expect(row.costPerResult).toBe(25);
+    expect(row.purchases).toBe(4);
+    expect(row.purchaseValue).toBe(620);
   });
 
   it('skips and counts an insight row for a campaign not yet synced', async () => {
@@ -91,6 +94,7 @@ describe('SyncDailyInsightsUseCase', () => {
         clicks: 2,
         currency: 'USD',
         actions: [],
+        actionValues: [],
       },
     ];
 

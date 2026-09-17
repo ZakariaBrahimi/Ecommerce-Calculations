@@ -61,6 +61,19 @@ describe('buildDemoScenario', () => {
     expect(scenario.targets.profitPerDeliveredOrder).toBeCloseTo(799, 0);
   });
 
+  it('gives every daily spend row a consistent purchases/purchaseValue pair', () => {
+    for (const campaign of scenario.campaigns) {
+      for (const daily of campaign.dailySpend) {
+        expect(daily.purchases).toBe(daily.results);
+        if (daily.purchases > 0) {
+          expect(daily.purchaseValue).toBeGreaterThan(0);
+        } else {
+          expect(daily.purchaseValue).toBe(0);
+        }
+      }
+    }
+  });
+
   it('gives every delivery order a tracking number unique within the dataset', () => {
     const trackingNumbers = new Set(scenario.deliveryOrders.map((o) => o.trackingNumber));
     expect(trackingNumbers.size).toBe(scenario.deliveryOrders.length);
