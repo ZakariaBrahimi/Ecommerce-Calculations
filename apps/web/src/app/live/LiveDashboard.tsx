@@ -1,46 +1,25 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
-import { formatDate, formatMoney, formatMultiplier, formatNumber, formatPercent } from '@/lib/format';
+import { formatMoney, formatMultiplier, formatNumber, formatPercent } from '@/lib/format';
 import {
   CampaignDTO,
   fetchCampaigns,
   fetchInsights,
-  fetchOrders,
-  fetchStatuses,
-  fetchTrackingHistory,
+  fetchProductSummary,
   FetchResult,
   InsightRow,
-  OrderDTO,
-  StatusDTO,
-  TrackingHistoryResponse,
   CampaignsResponse,
   InsightsResponse,
-  OrdersResponse,
-  StatusesResponse,
+  ProductSummaryDTO,
+  ProductSummaryResponse,
 } from '@/lib/liveClient';
+import { loadProductConfig, saveProductConfig, ProductConfig, ProductConfigMap } from '@/lib/productConfigStorage';
 
-const STATUS_LABEL: Record<string, string> = {
-  pending: 'Pending',
-  in_transit: 'In transit',
-  delivered: 'Delivered',
-  returned: 'Returned',
-  cancelled: 'Cancelled',
-  lost: 'Lost',
-  exception: 'Needs attention',
-  unknown: 'Unknown',
-};
-
-const STATUS_STYLE: Record<string, string> = {
-  pending: 'text-ink-3',
-  in_transit: 'text-indigo',
-  delivered: 'text-emerald',
-  returned: 'text-amber',
-  cancelled: 'text-critical',
-  lost: 'text-critical',
-  exception: 'text-critical',
-  unknown: 'text-ink-3',
-};
+// Confirmed with the account owner - Meta ad spend is billed in USD here.
+// Fixed, not live-fetched (no persistence, no FX API in scope) - update this
+// if the real rate moves meaningfully.
+const USD_TO_DZD_RATE = 250;
 
 function ErrorBanner({ message }: { message: string }) {
   return (
@@ -58,73 +37,83 @@ function SkeletonRows({ rows = 4 }: { rows?: number }) {
   );
 }
 
+function round2(value: number): number {
+  return Math.round(value * 100) / 100;
+}
+
+function emptyConfig(displayName: string): ProductConfig {
+  return { displayName, campaignIds: [], buyPrice: null, sellPrice: null };
+}
+
 export function LiveDashboard() {
-  const [ordersResult, setOrdersResult] = useState<FetchResult<OrdersResponse> | null>(null);
-  const [statusesByTracking, setStatusesByTracking] = useState<Map<string, StatusDTO>>(new Map());
-  const [statusesError, setStatusesError] = useState<string | null>(null);
+  const [productsResult, setProductsResult] = useState<FetchResult<ProductSummaryResponse> | null>(null);
   const [campaignsResult, setCampaignsResult] = useState<FetchResult<CampaignsResponse> | null>(null);
   const [insightsResult, setInsightsResult] = useState<FetchResult<InsightsResponse> | null>(null);
 
-  const [ordersLoading, setOrdersLoading] = useState(true);
-  const [statusesLoading, setStatusesLoading] = useState(false);
+  const [productsLoading, setProductsLoading] = useState(true);
   const [campaignsLoading, setCampaignsLoading] = useState(true);
   const [insightsLoading, setInsightsLoading] = useState(true);
-
   const [lastLoadedAt, setLastLoadedAt] = useState<Date | null>(null);
-  const [trackingPanel, setTrackingPanel] = useState<{ trackingNumber: string; result: FetchResult<TrackingHistoryResponse> | 'loading' } | null>(null);
+
+  const [config, setConfig] = useState<ProductConfigMap>({});
+  const [configLoaded, setConfigLoaded] = useState(false);
+
+  // localStorage only exists in the browser - loaded once after mount, never during SSR.
+  useEffect(() => {
+    setConfig(loadProductConfig());
+    setConfigLoaded(true);
+  }, []);
 
   const loadAll = useCallback(async () => {
-    setOrdersLoading(true);
+    setProductsLoading(true);
     setCampaignsLoading(true);
     setInsightsLoading(true);
-    setStatusesByTracking(new Map());
-    setStatusesError(null);
 
-    // Three independent upstream calls (Elogistia orders, Meta campaigns,
-    // Meta insights) fetched in parallel - none depends on the others.
-    const [orders, campaigns, insights] = await Promise.all([fetchOrders(), fetchCampaigns(), fetchInsights()]);
+    // Three independent upstream calls (Elogistia's per-product summary,
+    // Meta campaigns, Meta insights) fetched in parallel - none depends on
+    // the others. Which campaign(s) fund which product is a client-side,
+    // user-maintained link (config, below) - Elogistia and Meta have no
+    // shared identifier to join on automatically.
+    const [products, campaigns, insights] = await Promise.all([fetchProductSummary(), fetchCampaigns(), fetchInsights()]);
 
-    setOrdersResult(orders);
-    setOrdersLoading(false);
+    setProductsResult(products);
+    setProductsLoading(false);
     setCampaignsResult(campaigns);
     setCampaignsLoading(false);
     setInsightsResult(insights);
     setInsightsLoading(false);
     setLastLoadedAt(new Date());
-
-    // Statuses genuinely depend on the tracking numbers orders just
-    // returned (Elogistia's order-list shape has no usable status field of
-    // its own - see elogistiaNormalize.ts) - this call runs after orders,
-    // but still in parallel with nothing left to wait on at this point.
-    // Orders without a tracking number yet (unconfirmed/undispatched) are
-    // filtered out first - calling the endpoint with nothing to look up
-    // would just 400.
-    if (orders.ok) {
-      const trackingNumbers = orders.data.orders.map((o) => o.trackingNumber).filter(Boolean);
-      if (trackingNumbers.length > 0) {
-        setStatusesLoading(true);
-        const statuses = await fetchStatuses(trackingNumbers);
-        if (statuses.ok) {
-          setStatusesByTracking(new Map(statuses.data.statuses.map((s) => [s.trackingNumber, s])));
-        } else {
-          setStatusesError(statuses.error);
-        }
-        setStatusesLoading(false);
-      }
-    }
   }, []);
 
   useEffect(() => {
     loadAll();
   }, [loadAll]);
 
-  async function openTracking(trackingNumber: string) {
-    setTrackingPanel({ trackingNumber, result: 'loading' });
-    const result = await fetchTrackingHistory(trackingNumber);
-    setTrackingPanel({ trackingNumber, result });
+  function updateConfig(productKey: string, fallbackName: string, patch: Partial<ProductConfig>) {
+    setConfig((prev) => {
+      const current = prev[productKey] ?? emptyConfig(fallbackName);
+      const next = { ...prev, [productKey]: { ...current, ...patch } };
+      saveProductConfig(next);
+      return next;
+    });
   }
 
+  const isLoading = productsLoading || campaignsLoading || insightsLoading || !configLoaded;
   const insightsByCampaignId = new Map((insightsResult?.ok ? insightsResult.data.rows : []).map((r) => [r.campaignId, r]));
+  const campaigns = campaignsResult?.ok ? campaignsResult.data.campaigns : [];
+
+  const linkedCampaignIds = new Set(
+    productsResult?.ok ? Object.values(config).flatMap((c) => c.campaignIds) : [],
+  );
+  const unlinkedCampaigns = campaigns.filter((c) => !linkedCampaignIds.has(c.externalCampaignId));
+  const unlinkedSpendDZD = round2(
+    unlinkedCampaigns.reduce((sum, c) => {
+      const insight = insightsByCampaignId.get(c.externalCampaignId);
+      if (!insight) return sum;
+      const rate = insight.currency === 'USD' ? USD_TO_DZD_RATE : 1;
+      return sum + insight.spend * rate;
+    }, 0),
+  );
 
   return (
     <div className="mx-auto max-w-[1280px] px-5 py-8">
@@ -133,18 +122,18 @@ export function LiveDashboard() {
           <p className="text-xs font-bold uppercase tracking-wide text-teal-strong">Live · no database</p>
           <h1 className="mt-1 font-sora text-[28px] font-bold text-ink-1">Serverless integration</h1>
           <p className="mt-1 max-w-[60ch] text-sm text-ink-2">
-            Every section below is fetched directly from Elogistia and Meta on this page load - nothing is
-            persisted or cached between visits.
+            Delivery outcomes are fetched directly from Elogistia and aggregated per product on every load; which
+            campaign(s) fund each product, and buy/sell price, are saved in this browser only.
           </p>
         </div>
         <div className="flex items-center gap-3">
           {lastLoadedAt && <span className="text-xs text-ink-3">Last loaded {lastLoadedAt.toLocaleTimeString()}</span>}
           <button
             onClick={loadAll}
-            disabled={ordersLoading || campaignsLoading || insightsLoading}
+            disabled={isLoading}
             className="rounded-md bg-teal px-4 py-2 text-sm font-semibold text-white transition hover:bg-teal-strong disabled:opacity-60"
           >
-            {ordersLoading || campaignsLoading || insightsLoading ? 'Loading…' : 'Refresh'}
+            {isLoading ? 'Loading…' : 'Refresh'}
           </button>
         </div>
       </div>
@@ -246,73 +235,155 @@ export function LiveDashboard() {
         )}
       </section>
 
-      {/* Elogistia orders + live statuses */}
+      {/* Per-product delivery outcomes + profit, linked to campaign(s) you pick */}
       <section className="rounded-lg border border-border bg-white p-6 shadow-md">
-        <div className="mb-4 flex items-center justify-between">
-          <h2 className="font-sora text-lg font-bold text-ink-1">Elogistia orders</h2>
-          {ordersResult?.ok && (
+        <div className="mb-1 flex items-center justify-between">
+          <h2 className="font-sora text-lg font-bold text-ink-1">Product performance</h2>
+          {productsResult?.ok && (
             <span className="rounded-md bg-teal-tint px-2.5 py-1 text-xs font-bold uppercase tracking-wide text-teal-strong">
-              {ordersResult.data.count} orders
+              {productsResult.data.products.length} products
             </span>
           )}
         </div>
+        <p className="mb-4 text-xs text-ink-3">
+          Product name, linked campaigns, and buy/sell price are editable and saved in this browser only.
+        </p>
 
-        {ordersLoading ? (
-          <SkeletonRows rows={6} />
-        ) : !ordersResult?.ok ? (
-          <ErrorBanner message={`Orders: ${ordersResult?.error ?? 'unknown error'}`} />
+        {productsLoading || campaignsLoading || insightsLoading || !configLoaded ? (
+          <SkeletonRows rows={5} />
+        ) : !productsResult?.ok ? (
+          <ErrorBanner message={`Elogistia: ${productsResult?.error ?? 'unknown error'}`} />
         ) : (
           <>
-            {statusesError && <div className="mb-3"><ErrorBanner message={`Statuses: ${statusesError}`} /></div>}
+            {unlinkedCampaigns.length > 0 && (
+              <p className="mb-3 rounded-md bg-amber-tint px-3 py-2 text-xs text-ink-2">
+                {unlinkedCampaigns.length} campaign{unlinkedCampaigns.length === 1 ? '' : 's'} not linked to a product yet
+                ({formatMoney(unlinkedSpendDZD, 'DZD')} spend excluded from the costs below) — link them in the table.
+              </p>
+            )}
             <div className="overflow-x-auto">
-              <table className="w-full min-w-[860px] border-collapse">
+              <table className="w-full min-w-[1400px] border-collapse">
                 <thead>
                   <tr className="border-b border-border text-left text-[11px] font-bold uppercase tracking-wide text-ink-3">
-                    <th className="px-3 pb-2.5">Tracking</th>
-                    <th className="px-3 pb-2.5">Customer</th>
-                    <th className="px-3 pb-2.5">Wilaya / commune</th>
-                    <th className="px-3 pb-2.5 text-right">Delivery fee</th>
-                    <th className="px-3 pb-2.5">Status</th>
-                    <th className="px-3 pb-2.5" />
+                    <th className="px-3 pb-2.5">Product</th>
+                    <th className="px-3 pb-2.5">Linked campaign(s)</th>
+                    <th className="px-3 pb-2.5 text-right">Delivered</th>
+                    <th className="px-3 pb-2.5 text-right">Returned</th>
+                    <th className="px-3 pb-2.5 text-right">In transit</th>
+                    <th className="px-3 pb-2.5 text-right">Delivered %</th>
+                    <th className="px-3 pb-2.5 text-right">Returned %</th>
+                    <th className="px-3 pb-2.5 text-right">In transit %</th>
+                    <th className="px-3 pb-2.5 text-right">Ad spend</th>
+                    <th className="px-3 pb-2.5 text-right">Cost / delivered</th>
+                    <th className="px-3 pb-2.5 text-right">Buy price</th>
+                    <th className="px-3 pb-2.5 text-right">Sell price</th>
+                    <th className="px-3 pb-2.5 text-right">Profit / order</th>
+                    <th className="px-3 pb-2.5 text-right">Total profit</th>
+                    <th className="px-3 pb-2.5 text-right">Total cost</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {ordersResult.data.orders.map((o: OrderDTO, index: number) => {
-                    const liveStatus = o.trackingNumber ? statusesByTracking.get(o.trackingNumber) : undefined;
-                    const status = liveStatus?.status ?? o.status;
+                  {productsResult.data.products.map((p: ProductSummaryDTO) => {
+                    const productConfig = config[p.productKey] ?? emptyConfig(p.productName);
+                    const displayName = productConfig.displayName || p.productName;
+
+                    const spendDZD = round2(
+                      productConfig.campaignIds.reduce((sum, id) => {
+                        const insight = insightsByCampaignId.get(id);
+                        if (!insight) return sum;
+                        const rate = insight.currency === 'USD' ? USD_TO_DZD_RATE : 1;
+                        return sum + insight.spend * rate;
+                      }, 0),
+                    );
+
+                    const costPerDelivered = p.delivered > 0 ? round2(spendDZD / p.delivered) : null;
+                    const { buyPrice, sellPrice } = productConfig;
+                    const netProfitPerOrder =
+                      buyPrice != null && sellPrice != null && costPerDelivered != null
+                        ? round2(sellPrice - buyPrice - costPerDelivered)
+                        : null;
+                    const totalNetProfit = netProfitPerOrder != null ? round2(netProfitPerOrder * p.delivered) : null;
+                    const totalCost = round2((buyPrice ?? 0) * p.delivered + spendDZD);
+
+                    const deliveredPct = p.total > 0 ? round2((p.delivered / p.total) * 100) : null;
+                    const returnedPct = p.total > 0 ? round2((p.returned / p.total) * 100) : null;
+                    const inTransitPct = p.total > 0 ? round2((p.inTransit / p.total) * 100) : null;
+
                     return (
-                      <tr key={o.trackingNumber || o.externalOrderId || index} className="border-b border-border last:border-none hover:bg-[#F1F5F9]">
-                        <td className="px-3 py-3 font-mono text-xs text-ink-2">{o.trackingNumber || '—'}</td>
-                        <td className="px-3 py-3 text-sm text-ink-1">{o.customerName ?? '—'}</td>
-                        <td className="px-3 py-3 text-sm text-ink-2">
-                          {[o.wilaya, o.commune].filter(Boolean).join(' / ') || '—'}
-                        </td>
-                        <td className="num px-3 py-3 text-right text-sm text-ink-2">{formatMoney(o.deliveryFee, 'DZD')}</td>
+                      <tr key={p.productKey} className="border-b border-border last:border-none align-top hover:bg-[#F1F5F9]">
                         <td className="px-3 py-3">
-                          <span className={`inline-flex items-center gap-1.5 text-xs font-bold ${STATUS_STYLE[status]}`}>
-                            <span className="h-1.5 w-1.5 rounded-full bg-current" />
-                            {statusesLoading && o.trackingNumber && !liveStatus ? 'Checking…' : STATUS_LABEL[status]}
-                          </span>
+                          <input
+                            value={displayName}
+                            onChange={(e) => updateConfig(p.productKey, p.productName, { displayName: e.target.value })}
+                            className="w-40 rounded-md border border-border px-2 py-1 text-sm text-ink-1 outline-none focus:border-teal"
+                          />
+                        </td>
+                        <td className="px-3 py-3">
+                          <select
+                            multiple
+                            value={productConfig.campaignIds}
+                            onChange={(e) =>
+                              updateConfig(p.productKey, p.productName, {
+                                campaignIds: Array.from(e.target.selectedOptions, (o) => o.value),
+                              })
+                            }
+                            className="h-20 w-48 rounded-md border border-border px-2 py-1 text-xs text-ink-1 outline-none focus:border-teal"
+                          >
+                            {campaigns.map((c) => (
+                              <option key={c.externalCampaignId} value={c.externalCampaignId}>
+                                {c.name}
+                              </option>
+                            ))}
+                          </select>
+                        </td>
+                        <td className="num px-3 py-3 text-right text-sm font-semibold text-emerald">{formatNumber(p.delivered)}</td>
+                        <td className="num px-3 py-3 text-right text-sm font-semibold text-amber">{formatNumber(p.returned)}</td>
+                        <td className="num px-3 py-3 text-right text-sm text-indigo">{formatNumber(p.inTransit)}</td>
+                        <td className="num px-3 py-3 text-right text-sm text-ink-2">{formatPercent(deliveredPct)}</td>
+                        <td className="num px-3 py-3 text-right text-sm text-ink-2">{formatPercent(returnedPct)}</td>
+                        <td className="num px-3 py-3 text-right text-sm text-ink-2">{formatPercent(inTransitPct)}</td>
+                        <td className="num px-3 py-3 text-right text-sm text-ink-1">{formatMoney(spendDZD, 'DZD')}</td>
+                        <td className="num px-3 py-3 text-right text-sm text-ink-1">{formatMoney(costPerDelivered, 'DZD')}</td>
+                        <td className="px-3 py-3 text-right">
+                          <input
+                            type="number"
+                            value={buyPrice ?? ''}
+                            onChange={(e) =>
+                              updateConfig(p.productKey, p.productName, {
+                                buyPrice: e.target.value === '' ? null : Number(e.target.value),
+                              })
+                            }
+                            placeholder="DZD"
+                            className="w-24 rounded-md border border-border px-2 py-1 text-right text-sm text-ink-1 outline-none focus:border-teal"
+                          />
                         </td>
                         <td className="px-3 py-3 text-right">
-                          {o.trackingNumber ? (
-                            <button
-                              onClick={() => openTracking(o.trackingNumber)}
-                              className="text-xs font-semibold text-teal-strong hover:underline"
-                            >
-                              View history
-                            </button>
-                          ) : (
-                            <span className="text-xs text-ink-3">No tracking #</span>
-                          )}
+                          <input
+                            type="number"
+                            value={sellPrice ?? ''}
+                            onChange={(e) =>
+                              updateConfig(p.productKey, p.productName, {
+                                sellPrice: e.target.value === '' ? null : Number(e.target.value),
+                              })
+                            }
+                            placeholder="DZD"
+                            className="w-24 rounded-md border border-border px-2 py-1 text-right text-sm text-ink-1 outline-none focus:border-teal"
+                          />
                         </td>
+                        <td className="num px-3 py-3 text-right text-sm font-semibold text-ink-1">
+                          {formatMoney(netProfitPerOrder, 'DZD')}
+                        </td>
+                        <td className={`num px-3 py-3 text-right text-sm font-semibold ${totalNetProfit != null && totalNetProfit < 0 ? 'text-critical' : 'text-emerald'}`}>
+                          {formatMoney(totalNetProfit, 'DZD')}
+                        </td>
+                        <td className="num px-3 py-3 text-right text-sm text-ink-1">{formatMoney(totalCost, 'DZD')}</td>
                       </tr>
                     );
                   })}
-                  {ordersResult.data.orders.length === 0 && (
+                  {productsResult.data.products.length === 0 && (
                     <tr>
-                      <td colSpan={6} className="py-8 text-center text-sm text-ink-3">
-                        No orders returned by Elogistia.
+                      <td colSpan={15} className="py-8 text-center text-sm text-ink-3">
+                        No orders with a recognized product name were found.
                       </td>
                     </tr>
                   )}
@@ -322,43 +393,6 @@ export function LiveDashboard() {
           </>
         )}
       </section>
-
-      {trackingPanel && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4"
-          onClick={() => setTrackingPanel(null)}
-        >
-          <div
-            className="max-h-[80vh] w-full max-w-md overflow-y-auto rounded-lg bg-white p-6 shadow-xl"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="mb-4 flex items-center justify-between">
-              <h3 className="font-sora text-base font-bold text-ink-1">Tracking history</h3>
-              <button onClick={() => setTrackingPanel(null)} className="text-sm text-ink-3 hover:text-ink-1">
-                Close
-              </button>
-            </div>
-            <p className="mb-3 font-mono text-xs text-ink-2">{trackingPanel.trackingNumber}</p>
-
-            {trackingPanel.result === 'loading' ? (
-              <SkeletonRows rows={3} />
-            ) : !trackingPanel.result.ok ? (
-              <ErrorBanner message={trackingPanel.result.error} />
-            ) : trackingPanel.result.data.history.length === 0 ? (
-              <p className="text-sm text-ink-3">No history events returned.</p>
-            ) : (
-              <ol className="flex flex-col gap-3">
-                {trackingPanel.result.data.history.map((event, i) => (
-                  <li key={i} className="border-l-2 border-teal pl-3">
-                    <p className={`text-sm font-semibold ${STATUS_STYLE[event.status]}`}>{event.rawStatus || STATUS_LABEL[event.status]}</p>
-                    <p className="text-xs text-ink-3">{event.occurredAt ? formatDate(event.occurredAt) : 'Date unknown'}</p>
-                  </li>
-                ))}
-              </ol>
-            )}
-          </div>
-        </div>
-      )}
     </div>
   );
 }

@@ -1,41 +1,21 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { elogistiaGet } from '@/lib/serverless/elogistiaClient';
-import { getOrdersPageInfo, normalizeOrderDetailRows } from '@/lib/serverless/elogistiaNormalize';
+import { elogistiaGet, fetchAllElogistiaOrderPages } from '@/lib/serverless/elogistiaClient';
+import { normalizeOrderDetailRows } from '@/lib/serverless/elogistiaNormalize';
 import { toErrorResponse } from '@/lib/serverless/providerError';
 
 // Live data only, fetched fresh on every dashboard open - no caching, no persistence.
 export const dynamic = 'force-dynamic';
 export const maxDuration = 60;
 
-// Caps how many pages one request pulls, so a growing order history can't
-// blow past this route's maxDuration or Elogistia's 100 req/min cap - see
-// docs/deployment-vercel-serverless.md.
-const MAX_PAGES = 20; // 20 * 100/page = up to 2,000 orders per load
-
-// Generating a full page of order detail is slow on Elogistia's end for an
-// account with a large order history (observed timing out entirely at a
-// 10s budget) - fetching every remaining page in one big Promise.all would
-// fire that many simultaneous heavy queries at once, likely making each one
-// slower still. Bounded concurrency keeps the win from parallelizing pages
-// without hammering their server all at once.
-const PAGE_FETCH_CONCURRENCY = 5;
-
 /**
  * GET /api/elogistia/orders
  * GET /api/elogistia/orders?tracking=L-372BNH
  *
- * Without `tracking`: every order, full detail (tracking number, name,
- * status) - not the sparse shape you'd get by omitting `tracking` entirely.
- * Elogistia's getOrders behaves differently depending on the `tracking`
- * param (found empirically, undocumented):
- *   - omitted entirely  -> sparse list (phone/commune only, no tracking/status)
- *   - a real value      -> that one order's full detail
- *   - present but empty -> EVERY order, full detail, paginated at 100/page
- * This route always sends `tracking=''` for a bulk fetch specifically to
- * get the detail shape, fetching pages (up to MAX_PAGES) in bounded-
- * concurrency batches since page numbers are known upfront (unlike Meta's
- * cursor pagination, this doesn't have to be strictly sequential). With
- * `tracking`: a single order.
+ * Manual/diagnostic use (curl, a future single-order feature) - the /live
+ * dashboard itself no longer calls the bulk (no `tracking`) path; it uses
+ * /api/elogistia/product-summary instead, which aggregates this same data
+ * server-side rather than shipping every raw order to the browser. With
+ * `tracking`: a single order's full detail.
  */
 export async function GET(req: NextRequest): Promise<NextResponse> {
   const tracking = req.nextUrl.searchParams.get('tracking')?.trim();
@@ -47,21 +27,8 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
       return NextResponse.json({ orders, count: orders.length });
     }
 
-    const firstPage = await elogistiaGet('/getOrders/', { tracking: '', page: '1' });
-    const pageInfo = getOrdersPageInfo(firstPage);
-    const totalPages = pageInfo ? Math.min(pageInfo.totalPages, MAX_PAGES) : 1;
-
-    const remainingPageNumbers = Array.from({ length: Math.max(0, totalPages - 1) }, (_, i) => i + 2);
-    const restPages: unknown[] = [];
-    for (let i = 0; i < remainingPageNumbers.length; i += PAGE_FETCH_CONCURRENCY) {
-      const batch = remainingPageNumbers.slice(i, i + PAGE_FETCH_CONCURRENCY);
-      const batchResults = await Promise.all(
-        batch.map((page) => elogistiaGet('/getOrders/', { tracking: '', page: String(page) })),
-      );
-      restPages.push(...batchResults);
-    }
-
-    const orders = [firstPage, ...restPages].flatMap((page) => normalizeOrderDetailRows(page));
+    const pages = await fetchAllElogistiaOrderPages();
+    const orders = pages.flatMap((page) => normalizeOrderDetailRows(page));
     return NextResponse.json({ orders, count: orders.length });
   } catch (err) {
     return toErrorResponse(err);

@@ -1,4 +1,5 @@
 import { elogistiaConfig } from './env';
+import { getOrdersPageInfo } from './elogistiaNormalize';
 import { ProviderApiError, isAbortError } from './providerError';
 
 /**
@@ -50,4 +51,41 @@ export async function elogistiaGet(path: string, params: Record<string, string |
   } catch (err) {
     throw new ProviderApiError('upstream', `Elogistia response for ${path} was not valid JSON`, err);
   }
+}
+
+// Caps how many pages one request pulls, so a growing order history can't
+// blow past a route's maxDuration or Elogistia's 100 req/min cap.
+const MAX_ORDER_PAGES = 20; // 20 * 100/page = up to 2,000 orders per load
+
+// Generating a full page of order detail is slow on Elogistia's end for an
+// account with a large order history (observed timing out entirely at a
+// too-tight budget) - fetching every remaining page in one big Promise.all
+// would fire that many simultaneous heavy queries at once, likely making
+// each one slower still. Bounded concurrency keeps the win from
+// parallelizing pages without hammering their server all at once.
+const PAGE_FETCH_CONCURRENCY = 5;
+
+/**
+ * Fetches every page of Elogistia's full-detail order shape (tracking
+ * number, name, status) and returns the raw page bodies, unmerged and
+ * unnormalized - callers (routes) decide how to shape the result. See
+ * elogistiaNormalize.ts's doc comment on normalizeOrderDetailRows for why
+ * `tracking: ''` (present but empty) is what triggers this shape instead of
+ * the sparse one.
+ */
+export async function fetchAllElogistiaOrderPages(): Promise<unknown[]> {
+  const firstPage = await elogistiaGet('/getOrders/', { tracking: '', page: '1' });
+  const pageInfo = getOrdersPageInfo(firstPage);
+  const totalPages = pageInfo ? Math.min(pageInfo.totalPages, MAX_ORDER_PAGES) : 1;
+
+  const remainingPageNumbers = Array.from({ length: Math.max(0, totalPages - 1) }, (_, i) => i + 2);
+  const pages: unknown[] = [firstPage];
+  for (let i = 0; i < remainingPageNumbers.length; i += PAGE_FETCH_CONCURRENCY) {
+    const batch = remainingPageNumbers.slice(i, i + PAGE_FETCH_CONCURRENCY);
+    const batchResults = await Promise.all(
+      batch.map((page) => elogistiaGet('/getOrders/', { tracking: '', page: String(page) })),
+    );
+    pages.push(...batchResults);
+  }
+  return pages;
 }

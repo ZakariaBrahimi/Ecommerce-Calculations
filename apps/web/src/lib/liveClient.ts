@@ -123,6 +123,26 @@ export interface InsightsResponse {
   totals: InsightTotals;
 }
 
+export interface ProductSummaryDTO {
+  productKey: string;
+  productName: string;
+  delivered: number;
+  returned: number;
+  inTransit: number;
+  pending: number;
+  cancelled: number;
+  lost: number;
+  exception: number;
+  unknownStatus: number;
+  total: number;
+}
+
+export interface ProductSummaryResponse {
+  products: ProductSummaryDTO[];
+}
+
+export const fetchProductSummary = () => safeFetch<ProductSummaryResponse>('/api/elogistia/product-summary');
+
 export const fetchOrders = (trackingNumber?: string) =>
   safeFetch<OrdersResponse>(`/api/elogistia/orders${trackingNumber ? `?tracking=${encodeURIComponent(trackingNumber)}` : ''}`);
 

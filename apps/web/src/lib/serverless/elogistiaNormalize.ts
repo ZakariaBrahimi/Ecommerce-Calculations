@@ -88,6 +88,7 @@ interface OrderDetailRow {
   ['Wilaya ']?: string;
   ['Frais de livraison']?: string | number;
   Status?: string;
+  Produit?: string;
 }
 
 /**
@@ -130,6 +131,84 @@ export function getOrdersPageInfo(body: unknown): OrdersPageInfo | null {
   const { currentPage, totalPages } = body as { currentPage?: number; totalPages?: number };
   if (typeof currentPage !== 'number' || typeof totalPages !== 'number') return null;
   return { currentPage, totalPages };
+}
+
+export interface ProductOrderCounts {
+  productKey: string;
+  /** A representative raw Produit string (first one seen for this key) - for display, editable client-side. */
+  productName: string;
+  delivered: number;
+  returned: number;
+  inTransit: number;
+  pending: number;
+  cancelled: number;
+  lost: number;
+  exception: number;
+  unknownStatus: number;
+  total: number;
+}
+
+/** Strips a leading "N x " quantity prefix (e.g. "2 x Live Vac" -> "live vac") so quantity variants of the same product are grouped together, not split into separate rows. */
+export function normalizeProductKey(rawProduct: string): string {
+  return rawProduct.replace(/^\s*\d+\s*x\s*/i, '').trim().toLowerCase();
+}
+
+type CountableField = 'delivered' | 'returned' | 'inTransit' | 'pending' | 'cancelled' | 'lost' | 'exception' | 'unknownStatus';
+
+const STATUS_COUNT_KEY: Record<NormalizedDeliveryStatus, CountableField> = {
+  delivered: 'delivered',
+  returned: 'returned',
+  in_transit: 'inTransit',
+  pending: 'pending',
+  cancelled: 'cancelled',
+  lost: 'lost',
+  exception: 'exception',
+  unknown: 'unknownStatus',
+};
+
+/**
+ * Aggregates every order across every fetched page into per-product
+ * delivery-outcome counts - this is what /api/elogistia/product-summary
+ * returns instead of the raw order list, since the frontend only needs the
+ * counts (see that route's doc comment for why: shipping ~1,400 raw order
+ * rows to the browser on every dashboard open was the point being avoided).
+ */
+export function summarizeOrdersByProduct(pages: unknown[]): ProductOrderCounts[] {
+  const groups = new Map<string, ProductOrderCounts>();
+
+  for (const page of pages) {
+    for (const raw of extractBodyArray(page)) {
+      const row = raw as OrderDetailRow;
+      const rawProduct = row.Produit?.trim();
+      if (!rawProduct) continue;
+
+      const key = normalizeProductKey(rawProduct);
+      let group = groups.get(key);
+      if (!group) {
+        group = {
+          productKey: key,
+          productName: rawProduct,
+          delivered: 0,
+          returned: 0,
+          inTransit: 0,
+          pending: 0,
+          cancelled: 0,
+          lost: 0,
+          exception: 0,
+          unknownStatus: 0,
+          total: 0,
+        };
+        groups.set(key, group);
+      }
+
+      const status = mapElogistiaStatus(row.Status ?? '');
+      const countKey = STATUS_COUNT_KEY[status];
+      group[countKey] += 1;
+      group.total += 1;
+    }
+  }
+
+  return [...groups.values()].sort((a, b) => b.total - a.total);
 }
 
 export interface NormalizedStatus {

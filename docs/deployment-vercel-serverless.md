@@ -11,11 +11,12 @@ Browser (/live) ── HTTP Basic Auth (src/proxy.ts) ──▶ everything past 
   │  Promise.all: same-origin fetch, credential cached per-origin by the browser
   ▼
 Next.js Route Handlers (Vercel Functions)
-  /api/elogistia/orders     → GET https://api.elogistia.com/getOrders/
-  /api/elogistia/statuses   → GET https://api.elogistia.com/getManyTracking/ (batched, parallel)
-  /api/elogistia/tracking   → GET https://api.elogistia.com/getTracking/
-  /api/meta/campaigns       → GET https://graph.facebook.com/.../campaigns + .../{ad_account_id} (parallel)
-  /api/meta/insights        → GET https://graph.facebook.com/.../insights
+  /api/elogistia/orders           → GET https://api.elogistia.com/getOrders/ (manual/diagnostic use - see below)
+  /api/elogistia/product-summary  → same upstream data as above, aggregated server-side per product
+  /api/elogistia/statuses         → GET https://api.elogistia.com/getManyTracking/ (batched, parallel)
+  /api/elogistia/tracking         → GET https://api.elogistia.com/getTracking/
+  /api/meta/campaigns             → GET https://graph.facebook.com/.../campaigns + .../{ad_account_id} (parallel)
+  /api/meta/insights              → GET https://graph.facebook.com/.../insights
 ```
 
 Every route:
@@ -24,7 +25,13 @@ Every route:
 - applies a request timeout via `AbortSignal.timeout()` (`ELOGISTIA_API_TIMEOUT_MS` / `META_API_TIMEOUT_MS`) and classifies every failure (timeout / auth / rate limit / upstream error) into a normalized `{error, kind}` JSON body with the matching HTTP status — see `src/lib/serverless/providerError.ts`,
 - normalizes the provider's raw, inconsistent field shapes into a clean, typed response before anything reaches the browser — see `src/lib/serverless/{elogistia,meta}Normalize.ts`.
 
-`/live`'s client component (`src/app/live/LiveDashboard.tsx`) fetches orders, campaigns and insights with a single `Promise.all` (they're independent of each other), shows a loading skeleton per section while its own request is in flight, and degrades per-section on error rather than blanking the whole page. Statuses are fetched right after orders resolve, since Elogistia's order-list shape has no usable status field of its own (see the module doc comment) — that's a genuine dependency, not an artificial one, so it isn't forced into the same `Promise.all`.
+`/live`'s client component (`src/app/live/LiveDashboard.tsx`) fetches the per-product summary, campaigns and insights with a single `Promise.all` (they're independent of each other), shows a loading skeleton per section while its own request is in flight, and degrades per-section on error rather than blanking the whole page.
+
+### Product performance and the campaign-to-product link
+
+Elogistia and Meta share no identifier — an Elogistia order has no campaign/ad reference, and a Meta campaign has no product field. `/api/elogistia/product-summary` fetches every order (same underlying pagination as `/api/elogistia/orders`, see below) and aggregates counts per product (Elogistia's `Produit` field, with quantity prefixes like "2 x " normalized away so they group with the base product). Which campaign(s) fund which product is a **manual, user-maintained link** picked in the UI - there's no automatic way to derive it - and, along with the product's display name and buy/sell price, is stored in **`localStorage`**, not on the server: it persists across reloads on the same browser/device only, per the "no database" requirement. Ad spend for linked campaigns is converted from Meta's account currency to DZD at a fixed rate (`USD_TO_DZD_RATE` in `LiveDashboard.tsx`) - confirm this still matches the real rate periodically, since it isn't fetched live.
+
+`/api/elogistia/orders` (no `tracking` filter) still exists for manual/diagnostic lookups (e.g. `curl`), but `/live` no longer calls its bulk path - it uses `/api/elogistia/product-summary` instead, which does the same upstream fetch but returns a small aggregated summary rather than shipping every raw order to the browser.
 
 ## 1. Authentication
 
