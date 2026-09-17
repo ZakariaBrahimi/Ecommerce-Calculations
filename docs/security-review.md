@@ -1,6 +1,8 @@
 # ProfitFlow AI — Security Review
 
-Scope: the whole `apps/api` backend (Elogistia delivery integration + Meta Ads integration) and the repository as a whole. This is a point-in-time review — re-run the checks in §5 whenever dependencies change or before a production deploy.
+Scope: the whole `apps/api` backend (Elogistia delivery integration + Meta Ads integration), `apps/web` (the Next.js frontend), and the repository as a whole. This is a point-in-time review — re-run the checks in §5 whenever dependencies change or before a production deploy.
+
+**Update (frontend + demo auth added):** `apps/web` was added as a backend-for-frontend — the browser only ever holds this app's own httpOnly session cookie, never the backend's URL, the `INTERNAL_API_TOKEN`, or any provider secret; all backend calls happen server-side (Server Components / Route Handlers). Its dependency audit is also clean (`next` was pinned to `16.3.5` specifically to close a critical AVIF Image Optimization RCE and a high-severity PostCSS issue present in the `14.2.x` line — see `apps/web/package.json`). A new backend endpoint, `POST /api/auth/demo-token`, was added for this integration; it is covered in §4 as a flagged, deliberately temporary risk, not a settled protection.
 
 ## 1. What must never be exposed, and where it actually lives
 
@@ -42,6 +44,7 @@ Everything above was verified with the existing test suite plus new tests, not j
 
 ## 4. Recommendations not yet implemented (honest gaps)
 
+- **`POST /api/auth/demo-token` is not a real login system, and is a real risk if misconfigured.** It mints a valid tenant session for any `tenantId` string, with no password and no user record — there is no signup/login module yet (see `apps/api/src/application/use-cases/IssueDemoTenantTokenUseCase.ts`'s doc comment). It is off by default (`ENABLE_DEMO_AUTH=false`), and even when enabled it still requires the `INTERNAL_API_TOKEN` (or Vercel's `CRON_SECRET`, per docs/deployment-vercel.md) to call it at all — but that means anyone who has that one token can mint a session for *any* tenant, not just their own. **Do not set `ENABLE_DEMO_AUTH=true` on a production deployment that holds real seller data**, and remove this endpoint entirely once a real Auth/Tenancy module (ARCHITECTURE.md) exists. Every call is logged at `warn` for visibility in the meantime.
 - **KMS-backed envelope encryption.** `DELIVERY_CREDENTIALS_ENCRYPTION_KEY` is currently a single static env var. That's fine for this stage, but it means anyone with read access to the production environment's variables can decrypt every tenant secret in the database. Production should move to a real KMS (AWS KMS / GCP KMS): the app holds only a *reference* to a key, and encryption/decryption calls go through the KMS API, which can be access-controlled and audited independently of the app's own env vars. `CredentialsCipher` is already an interface for exactly this reason — swapping the implementation doesn't touch any use case.
 - **Secret scanning in CI.** Nothing currently runs `gitleaks`/`trufflehog` on pull requests. Recommended before this repo takes outside contributions.
 - **Distributed rate limiting isn't the default** — it activates only when Upstash is configured (see finding #7). Before real production traffic on a horizontally-scaled or serverless deployment, set `UPSTASH_REDIS_REST_URL`/`_TOKEN`; otherwise the limiter under-enforces (not over-enforces) the real Elogistia/Meta limits, which risks the *provider* rate-limiting or suspending the account, not a security leak per se, but a real availability risk.
@@ -53,9 +56,14 @@ Everything above was verified with the existing test suite plus new tests, not j
 ```bash
 cd apps/api
 npm audit                        # dependency vulnerabilities
-npm test                         # 112 tests, includes the rate-limiter/error-wrapping fixes above
+npm test                         # 115 tests, includes the rate-limiter/error-wrapping fixes above
 npm run typecheck
 git log --all -p | grep -iE "api[_-]?key\s*[:=]\s*['\"a-z0-9]|password\s*[:=]\s*['\"]"   # spot-check for leaked literals
+
+cd ../web
+npm audit                        # frontend dependency vulnerabilities
+npm run typecheck
+npm run build
 ```
 
 ## 6. Deployment secrets management

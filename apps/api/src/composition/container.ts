@@ -2,6 +2,7 @@ import { PrismaClient } from '@prisma/client';
 import { loadConfig } from '../infrastructure/config/env';
 import { PinoLogger } from '../infrastructure/logging/PinoLogger';
 import { AesGcmCredentialsCipher } from '../infrastructure/security/AesGcmCredentialsCipher';
+import { JwtTenantSessionIssuer } from '../infrastructure/security/JwtTenantSessionIssuer';
 import { createRateLimiter } from '../infrastructure/rate-limit/createRateLimiter';
 import { ElogistiaHttpClient } from '../infrastructure/providers/elogistia/ElogistiaHttpClient';
 import { ElogistiaDeliveryProvider } from '../infrastructure/providers/elogistia/ElogistiaDeliveryProvider';
@@ -13,11 +14,16 @@ import { ConnectDeliveryProviderUseCase } from '../application/use-cases/Connect
 import { FetchDeliveryOrdersUseCase } from '../application/use-cases/FetchDeliveryOrdersUseCase';
 import { FetchOrderStatusUseCase } from '../application/use-cases/FetchOrderStatusUseCase';
 import { SyncDeliveryOrdersUseCase } from '../application/use-cases/SyncDeliveryOrdersUseCase';
+import { IssueDemoTenantTokenUseCase } from '../application/use-cases/IssueDemoTenantTokenUseCase';
+import { GetOverviewDashboardUseCase } from '../application/use-cases/GetOverviewDashboardUseCase';
 import { DeliverySyncScheduler } from '../infrastructure/jobs/DeliverySyncScheduler';
 import { DeliveryConnectionController } from '../interfaces/http/controllers/DeliveryConnectionController';
 import { DeliveryOrderController } from '../interfaces/http/controllers/DeliveryOrderController';
 import { DeliverySyncController } from '../interfaces/http/controllers/DeliverySyncController';
+import { DemoAuthController } from '../interfaces/http/controllers/DemoAuthController';
+import { OverviewController } from '../interfaces/http/controllers/OverviewController';
 import { DeliveryRouteDeps } from '../interfaces/http/routes/deliveryRoutes';
+import { ServerDeps } from '../interfaces/http/server';
 import { buildMetaAdsModule, MetaAdsModule } from './metaAdsContainer';
 
 /**
@@ -31,9 +37,10 @@ export interface Container {
   logger: PinoLogger;
   prisma: PrismaClient;
   scheduler: DeliverySyncScheduler;
-  routeDeps: DeliveryRouteDeps;
   syncCronExpression: string;
   metaAds: MetaAdsModule;
+  /** Ready to pass straight to createServer(logger, serverDeps). */
+  serverDeps: ServerDeps;
 }
 
 export function buildContainer(): Container {
@@ -81,7 +88,7 @@ export function buildContainer(): Container {
 
   const scheduler = new DeliverySyncScheduler(gateway.provider, connectionRepository, syncUseCase, logger);
 
-  const routeDeps: DeliveryRouteDeps = {
+  const deliveryRouteDeps: DeliveryRouteDeps = {
     jwtSecret: config.jwtSecret,
     internalApiToken: config.internalApiToken,
     connectionController: new DeliveryConnectionController(connectUseCase),
@@ -91,5 +98,28 @@ export function buildContainer(): Container {
 
   const metaAds = buildMetaAdsModule({ prisma, cipher, logger, config });
 
-  return { logger, prisma, scheduler, routeDeps, syncCronExpression: config.syncIntervalCron, metaAds };
+  // Cross-cutting: joins delivery outcomes with ad spend for the
+  // Overview/Delivery Funnel/Profit Breakdown dashboard sections.
+  const overviewUseCase = new GetOverviewDashboardUseCase(orderRepository, metaAds.dailySpendRepository);
+
+  // Demo-only tenant session issuance - see IssueDemoTenantTokenUseCase's doc comment.
+  const sessionIssuer = new JwtTenantSessionIssuer(config.jwtSecret);
+  const issueDemoTokenUseCase = new IssueDemoTenantTokenUseCase(sessionIssuer, logger);
+
+  const serverDeps: ServerDeps = {
+    delivery: deliveryRouteDeps,
+    metaAds: metaAds.routeDeps,
+    auth: {
+      internalApiToken: config.internalApiToken,
+      demoAuthEnabled: config.enableDemoAuth,
+      demoAuthController: new DemoAuthController(issueDemoTokenUseCase),
+    },
+    overview: {
+      jwtSecret: config.jwtSecret,
+      overviewController: new OverviewController(overviewUseCase),
+    },
+    corsAllowedOrigins: config.corsAllowedOrigins,
+  };
+
+  return { logger, prisma, scheduler, syncCronExpression: config.syncIntervalCron, metaAds, serverDeps };
 }

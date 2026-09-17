@@ -5,4 +5,11 @@ coverage/
 *.log
 .env
 .env.local
+.env*.local
 .DS_Store
+
+# Next.js (apps/web)
+.next/
+out/
+next-env.d.ts
+*.tsbuildinfo

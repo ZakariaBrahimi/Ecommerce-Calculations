@@ -20,6 +20,8 @@ import { SyncCampaignStructureUseCase } from '../application/use-cases/SyncCampa
 import { SyncDailyInsightsUseCase } from '../application/use-cases/SyncDailyInsightsUseCase';
 import { SyncMetaAdsUseCase } from '../application/use-cases/SyncMetaAdsUseCase';
 import { GetCampaignDashboardUseCase } from '../application/use-cases/GetCampaignDashboardUseCase';
+import { CampaignRepository } from '../domain/ports/CampaignRepository';
+import { DailySpendRepository } from '../domain/ports/DailySpendRepository';
 import { MetaAdsSyncScheduler } from '../infrastructure/jobs/MetaAdsSyncScheduler';
 import { MetaOAuthController } from '../interfaces/http/controllers/MetaOAuthController';
 import { MetaAdAccountController } from '../interfaces/http/controllers/MetaAdAccountController';
@@ -31,6 +33,9 @@ export interface MetaAdsModule {
   scheduler: MetaAdsSyncScheduler;
   routeDeps: MetaAdsRouteDeps;
   syncCronExpression: string;
+  /** Exposed so the cross-module overview aggregation (composition/overviewContainer.ts) can reuse them without a second PrismaClient wiring. */
+  campaignRepository: CampaignRepository;
+  dailySpendRepository: DailySpendRepository;
 }
 
 /**
@@ -118,5 +123,11 @@ export function buildMetaAdsModule(deps: {
     syncController: new MetaSyncController(scheduler),
   };
 
-  return { scheduler, routeDeps, syncCronExpression: config.metaAds.syncIntervalCron };
+  return {
+    scheduler,
+    routeDeps,
+    syncCronExpression: config.metaAds.syncIntervalCron,
+    campaignRepository,
+    dailySpendRepository,
+  };
 }

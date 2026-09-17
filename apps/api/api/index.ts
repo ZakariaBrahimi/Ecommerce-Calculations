@@ -19,10 +19,8 @@
  */
 import { buildContainer } from '../src/composition/container';
 import { createServer } from '../src/interfaces/http/server';
-import { loadConfig } from '../src/infrastructure/config/env';
 
-const config = loadConfig();
-const { logger, routeDeps, metaAds } = buildContainer();
-const app = createServer(logger, routeDeps, metaAds.routeDeps, config.corsAllowedOrigins);
+const { logger, serverDeps } = buildContainer();
+const app = createServer(logger, serverDeps);
 
 export default app;

@@ -39,6 +39,8 @@ export interface AppConfig {
   /** Optional distributed rate-limit store (Upstash Redis REST API) - required for correctness once
    *  this runs as more than one process/instance; falls back to an in-memory limiter otherwise. */
   upstashRedis: { url: string; token: string } | null;
+  /** Off by default. Mints a tenant session with no login - see IssueDemoTenantTokenUseCase's doc comment. */
+  enableDemoAuth: boolean;
 }
 
 function required(name: string): string {
@@ -118,6 +120,7 @@ export function loadConfig(): AppConfig {
       .filter((origin) => origin !== ''),
     isServerless: process.env.VERCEL === '1',
     upstashRedis: buildUpstashConfig(),
+    enableDemoAuth: optional('ENABLE_DEMO_AUTH', 'false').toLowerCase() === 'true',
   };
 
   return cached;

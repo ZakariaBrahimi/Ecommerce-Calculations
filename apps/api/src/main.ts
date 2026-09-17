@@ -4,9 +4,9 @@ import { loadConfig } from './infrastructure/config/env';
 
 async function main(): Promise<void> {
   const config = loadConfig();
-  const { logger, prisma, scheduler, routeDeps, metaAds } = buildContainer();
+  const { logger, prisma, scheduler, metaAds, serverDeps } = buildContainer();
 
-  const app = createServer(logger, routeDeps, metaAds.routeDeps, config.corsAllowedOrigins);
+  const app = createServer(logger, serverDeps);
   const server = app.listen(config.port, () => {
     logger.info('ProfitFlow AI backend listening', { port: config.port });
   });

@@ -92,6 +92,17 @@ npm run dev
   `paymentFees` are wired in once the orders/delivery data join is built —
   the formulas don't change when that happens.
 
+## Cross-cutting endpoints
+
+- **`GET /api/overview`** — the Overview KPIs / Delivery Funnel / Profit
+  Breakdown data (`GetOverviewDashboardUseCase`): joins delivery outcomes
+  (Elogistia) with ad spend (Meta Ads) using `ProfitMetricsCalculator`, the
+  exact module built ahead of time for this join. Powers `apps/web`'s
+  dashboard alongside `GET /api/meta-ads/dashboard`.
+- **`POST /api/auth/demo-token`** — off by default (`ENABLE_DEMO_AUTH`), and
+  not a real login system even when on. See `IssueDemoTenantTokenUseCase`'s
+  doc comment and `../../docs/security-review.md` §4 before enabling it.
+
 ## Errors and logging (shared across both integrations)
 
 - **Errors** are typed hierarchies (`DeliveryIntegrationError`,
@@ -104,9 +115,12 @@ npm run dev
 
 ## Security & deployment
 
+- Full step-by-step production deployment (both this app and `apps/web`,
+  in order): `../../docs/production-deployment.md`.
 - Full audit (findings, fixes, remaining gaps): `../../docs/security-review.md`.
-- Deploying this service to Vercel (why the in-process cron/rate-limiter
-  had to change, env var setup, secrets management): `../../docs/deployment-vercel.md`.
+- Deploying this service to Vercel specifically (why the in-process
+  cron/rate-limiter had to change, env var setup, secrets management):
+  `../../docs/deployment-vercel.md`.
 - `helmet`, a `CORS_ALLOWED_ORIGINS` allowlist (never a wildcard), and
   inbound rate limiting (`express-rate-limit`) sit in front of every route -
   see `interfaces/http/middleware/security.ts`.
