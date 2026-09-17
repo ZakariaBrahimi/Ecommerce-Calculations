@@ -1,0 +1,38 @@
+{
+  "name": "@profitflow/delivery-api",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Delivery provider integration service (Elogistia adapter) for ProfitFlow AI",
+  "main": "dist/main.js",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "start": "node dist/main.js",
+    "dev": "ts-node-dev --respawn --transpile-only src/main.ts",
+    "test": "jest",
+    "test:watch": "jest --watch",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@prisma/client": "^5.19.1",
+    "dotenv": "^16.4.5",
+    "express": "^4.19.2",
+    "jsonwebtoken": "^9.0.2",
+    "node-cron": "^3.0.3",
+    "pino": "^9.4.0",
+    "pino-http": "^10.3.0",
+    "uuid": "^9.0.1"
+  },
+  "devDependencies": {
+    "@types/express": "^4.17.21",
+    "@types/jest": "^29.5.12",
+    "@types/jsonwebtoken": "^9.0.6",
+    "@types/node": "^20.14.10",
+    "@types/node-cron": "^3.0.11",
+    "@types/uuid": "^9.0.8",
+    "jest": "^29.7.0",
+    "prisma": "^5.19.1",
+    "ts-jest": "^29.2.5",
+    "ts-node-dev": "^2.0.0",
+    "typescript": "^5.5.4"
+  }
+}

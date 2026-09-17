@@ -1,0 +1,90 @@
+// ProfitFlow AI - delivery integration data model.
+// Matches the domain entities in src/domain/entities and the repository
+// ports in src/domain/ports - Prisma is an infrastructure detail, the
+// domain/application layers never import from this schema or its client.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum InternalDeliveryStatus {
+  NEW
+  CONFIRMED
+  SHIPPED
+  DELIVERED
+  FAILED
+  RETURNED
+}
+
+enum DeliveryConnectionStatus {
+  active
+  invalid
+  revoked
+}
+
+/// One row per tenant per delivery provider. `encryptedApiKey` is opaque
+/// ciphertext (AES-256-GCM envelope, see CredentialsCipher) - never a
+/// plaintext key, and never returned by any API response.
+model DeliveryProviderConnection {
+  tenantId        String                   @map("tenant_id")
+  provider        String
+  encryptedApiKey String                   @map("encrypted_api_key")
+  status          DeliveryConnectionStatus @default(active)
+  createdAt       DateTime                 @default(now()) @map("created_at")
+  updatedAt       DateTime                 @updatedAt @map("updated_at")
+
+  @@id([tenantId, provider])
+  @@index([provider, status])
+  @@map("delivery_provider_connections")
+}
+
+/// A shipment tracked with a delivery provider, normalized to ProfitFlow
+/// AI's internal status lifecycle. Keyed on (tenantId, trackingNumber) -
+/// matches DeliveryOrderRepository.upsert's idempotency contract.
+model DeliveryOrder {
+  id              String                 @id @default(uuid())
+  tenantId        String                 @map("tenant_id")
+  provider        String
+  externalOrderId String?                @map("external_order_id")
+  trackingNumber  String                 @map("tracking_number")
+  customerName    String?                @map("customer_name")
+  customerPhone   String?                @map("customer_phone")
+  address         String?
+  commune         String?
+  wilaya          String?
+  deliveryFee     Decimal?               @map("delivery_fee") @db.Decimal(14, 4)
+  internalStatus  InternalDeliveryStatus @map("internal_status")
+  rawStatus       String?                @map("raw_status")
+  lastSyncedAt    DateTime?              @map("last_synced_at")
+  createdAt       DateTime               @default(now()) @map("created_at")
+  updatedAt       DateTime               @updatedAt @map("updated_at")
+
+  statusEvents DeliveryStatusEvent[]
+
+  @@unique([tenantId, trackingNumber])
+  @@index([tenantId, internalStatus])
+  @@map("delivery_orders")
+}
+
+/// Append-only status history - one row per observed status change, so the
+/// profit engine (and support/audit tooling) can see exactly when a
+/// shipment was returned/cancelled, not just its current status.
+model DeliveryStatusEvent {
+  id              String                 @id @default(uuid())
+  deliveryOrderId String                 @map("delivery_order_id")
+  tenantId        String                 @map("tenant_id")
+  internalStatus  InternalDeliveryStatus @map("internal_status")
+  rawStatus       String                 @map("raw_status")
+  occurredAt      DateTime               @map("occurred_at")
+  recordedAt      DateTime               @default(now()) @map("recorded_at")
+
+  deliveryOrder DeliveryOrder @relation(fields: [deliveryOrderId], references: [id])
+
+  @@index([deliveryOrderId, occurredAt])
+  @@map("delivery_status_events")
+}
