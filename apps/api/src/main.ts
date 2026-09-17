@@ -4,18 +4,20 @@ import { loadConfig } from './infrastructure/config/env';
 
 async function main(): Promise<void> {
   const config = loadConfig();
-  const { logger, prisma, scheduler, routeDeps } = buildContainer();
+  const { logger, prisma, scheduler, routeDeps, metaAds } = buildContainer();
 
-  const app = createServer(logger, routeDeps);
+  const app = createServer(logger, routeDeps, metaAds.routeDeps);
   const server = app.listen(config.port, () => {
-    logger.info('Delivery integration service listening', { port: config.port });
+    logger.info('ProfitFlow AI backend listening', { port: config.port });
   });
 
   scheduler.start(config.syncIntervalCron);
+  metaAds.scheduler.start(metaAds.syncCronExpression);
 
   const shutdown = async (signal: string): Promise<void> => {
     logger.info('Shutting down', { signal });
     scheduler.stop();
+    metaAds.scheduler.stop();
     server.close();
     await prisma.$disconnect();
     process.exit(0);

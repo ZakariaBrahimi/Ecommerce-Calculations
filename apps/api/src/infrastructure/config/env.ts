@@ -17,6 +17,17 @@ export interface AppConfig {
     timeoutMs: number;
     rateLimitPerMinute: number;
   };
+  metaAds: {
+    graphApiBaseUrl: string;
+    graphApiVersion: string;
+    appId: string;
+    appSecret: string;
+    oauthRedirectUri: string;
+    oauthStateSecret: string;
+    rateLimitPerMinute: number;
+    timeoutMs: number;
+    syncIntervalCron: string;
+  };
   credentialsEncryptionKeyBase64: string;
   jwtSecret: string;
   internalApiToken: string;
@@ -59,6 +70,25 @@ export function loadConfig(): AppConfig {
       apiUrl: optional('DELIVERY_API_URL', 'https://api.elogistia.com'),
       timeoutMs: optionalInt('DELIVERY_API_TIMEOUT_MS', 10_000),
       rateLimitPerMinute: optionalInt('DELIVERY_RATE_LIMIT_PER_MINUTE', 100),
+    },
+    metaAds: {
+      graphApiBaseUrl: optional('META_GRAPH_API_BASE_URL', 'https://graph.facebook.com'),
+      graphApiVersion: optional('META_GRAPH_API_VERSION', 'v19.0'),
+      // App id is not secret (it's embedded in the OAuth redirect URL the
+      // browser is sent to) - but the app SECRET must never leave the
+      // backend: it is required for both the code->token exchange and the
+      // short-lived->long-lived token exchange, and is never sent to the
+      // frontend or returned in any API response.
+      appId: required('META_APP_ID'),
+      appSecret: required('META_APP_SECRET'),
+      oauthRedirectUri: required('META_OAUTH_REDIRECT_URI'),
+      // Signs the OAuth `state` param so the callback can recover which
+      // tenant started the flow without relying on a session cookie/header
+      // (Meta's redirect is a plain browser GET with no auth of its own).
+      oauthStateSecret: required('META_OAUTH_STATE_SECRET'),
+      rateLimitPerMinute: optionalInt('META_ADS_RATE_LIMIT_PER_MINUTE', 200),
+      timeoutMs: optionalInt('META_ADS_API_TIMEOUT_MS', 15_000),
+      syncIntervalCron: optional('META_ADS_SYNC_CRON', '0 * * * *'),
     },
     // 32 bytes, base64-encoded, used for local/dev envelope encryption of
     // tenant delivery-provider credentials. In staging/production this

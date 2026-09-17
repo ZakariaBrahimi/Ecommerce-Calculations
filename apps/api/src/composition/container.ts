@@ -18,6 +18,7 @@ import { DeliveryConnectionController } from '../interfaces/http/controllers/Del
 import { DeliveryOrderController } from '../interfaces/http/controllers/DeliveryOrderController';
 import { DeliverySyncController } from '../interfaces/http/controllers/DeliverySyncController';
 import { DeliveryRouteDeps } from '../interfaces/http/routes/deliveryRoutes';
+import { buildMetaAdsModule, MetaAdsModule } from './metaAdsContainer';
 
 /**
  * Composition root - the only place in the codebase allowed to `new` up
@@ -32,6 +33,7 @@ export interface Container {
   scheduler: DeliverySyncScheduler;
   routeDeps: DeliveryRouteDeps;
   syncCronExpression: string;
+  metaAds: MetaAdsModule;
 }
 
 export function buildContainer(): Container {
@@ -81,5 +83,7 @@ export function buildContainer(): Container {
     syncController: new DeliverySyncController(scheduler),
   };
 
-  return { logger, prisma, scheduler, routeDeps, syncCronExpression: config.syncIntervalCron };
+  const metaAds = buildMetaAdsModule({ prisma, cipher, logger, config });
+
+  return { logger, prisma, scheduler, routeDeps, syncCronExpression: config.syncIntervalCron, metaAds };
 }

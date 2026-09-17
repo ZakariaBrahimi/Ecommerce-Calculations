@@ -88,3 +88,137 @@ model DeliveryStatusEvent {
   @@index([deliveryOrderId, occurredAt])
   @@map("delivery_status_events")
 }
+
+// --- Meta Ads integration data model ---------------------------------
+
+enum CampaignStatus {
+  ACTIVE
+  PAUSED
+  STOPPED
+}
+
+enum MetaConnectionStatus {
+  pending_ad_account
+  active
+  invalid
+  revoked
+}
+
+/// One row per tenant's Meta Ads connection. `encryptedAccessToken` is
+/// opaque ciphertext (same AES-256-GCM envelope as the delivery
+/// integration's CredentialsCipher) - never a plaintext token, and never
+/// returned by any API response. `adAccountId` is null until the seller
+/// picks which of their ad accounts to track (SelectMetaAdAccountUseCase).
+model MetaAdAccountConnection {
+  tenantId             String               @id @map("tenant_id")
+  provider             String               @default("meta")
+  encryptedAccessToken String               @map("encrypted_access_token")
+  tokenExpiresAt       DateTime             @map("token_expires_at")
+  adAccountId          String?              @map("ad_account_id")
+  currency             String?
+  status               MetaConnectionStatus @default(pending_ad_account)
+  createdAt            DateTime             @default(now()) @map("created_at")
+  updatedAt            DateTime             @updatedAt @map("updated_at")
+
+  @@index([provider, status])
+  @@map("meta_ad_account_connections")
+}
+
+/// A Meta Ads campaign normalized to ProfitFlow AI's Active/Paused/Stopped
+/// lifecycle. Spend/results are NOT stored here - see DailySpend.
+model Campaign {
+  id                  String         @id @default(uuid())
+  tenantId            String         @map("tenant_id")
+  provider            String         @default("meta")
+  adAccountId         String         @map("ad_account_id")
+  externalCampaignId  String         @map("external_campaign_id")
+  name                String
+  objective           String?
+  status              CampaignStatus
+  rawStatus           String         @map("raw_status")
+  dailyBudget         Decimal?       @map("daily_budget") @db.Decimal(14, 4)
+  currency            String?
+  startDate           DateTime?      @map("start_date")
+  endDate             DateTime?      @map("end_date")
+  lastSyncedAt        DateTime?      @map("last_synced_at")
+  createdAt           DateTime       @default(now()) @map("created_at")
+  updatedAt           DateTime       @updatedAt @map("updated_at")
+
+  adSets     AdSet[]
+  ads        Ad[]
+  dailySpend DailySpend[]
+
+  @@unique([tenantId, externalCampaignId])
+  @@index([tenantId, status])
+  @@map("campaigns")
+}
+
+model AdSet {
+  id              String         @id @default(uuid())
+  tenantId        String         @map("tenant_id")
+  campaignId      String         @map("campaign_id")
+  externalAdSetId String         @map("external_ad_set_id")
+  name            String
+  status          CampaignStatus
+  rawStatus       String         @map("raw_status")
+  dailyBudget     Decimal?       @map("daily_budget") @db.Decimal(14, 4)
+  startDate       DateTime?      @map("start_date")
+  endDate         DateTime?      @map("end_date")
+  lastSyncedAt    DateTime?      @map("last_synced_at")
+  createdAt       DateTime       @default(now()) @map("created_at")
+  updatedAt       DateTime       @updatedAt @map("updated_at")
+
+  campaign Campaign @relation(fields: [campaignId], references: [id])
+  ads      Ad[]
+
+  @@unique([tenantId, externalAdSetId])
+  @@index([tenantId, campaignId])
+  @@map("ad_sets")
+}
+
+model Ad {
+  id           String         @id @default(uuid())
+  tenantId     String         @map("tenant_id")
+  campaignId   String         @map("campaign_id")
+  adSetId      String         @map("ad_set_id")
+  externalAdId String         @map("external_ad_id")
+  name         String
+  status       CampaignStatus
+  rawStatus    String         @map("raw_status")
+  lastSyncedAt DateTime?      @map("last_synced_at")
+  createdAt    DateTime       @default(now()) @map("created_at")
+  updatedAt    DateTime       @updatedAt @map("updated_at")
+
+  campaign Campaign @relation(fields: [campaignId], references: [id])
+  adSet    AdSet    @relation(fields: [adSetId], references: [id])
+
+  @@unique([tenantId, externalAdId])
+  @@index([tenantId, adSetId])
+  @@map("ads")
+}
+
+/// One row per campaign per day, pulled from Meta's Insights API. Fully
+/// overwritten (never merged) on each re-pull of the rolling sync window,
+/// since Meta revises attributed conversions for several days after the
+/// fact - see DailySpend's class doc.
+model DailySpend {
+  id            String   @id @default(uuid())
+  tenantId      String   @map("tenant_id")
+  campaignId    String   @map("campaign_id")
+  date          DateTime @db.Date
+  spend         Decimal  @db.Decimal(14, 4)
+  impressions   Int
+  clicks        Int
+  results       Int
+  resultType    String?  @map("result_type")
+  costPerResult Decimal? @map("cost_per_result") @db.Decimal(14, 4)
+  currency      String?
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+
+  campaign Campaign @relation(fields: [campaignId], references: [id])
+
+  @@unique([tenantId, campaignId, date])
+  @@index([tenantId])
+  @@map("daily_spend")
+}
